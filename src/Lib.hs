@@ -1,8 +1,13 @@
+{-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
+
 module Lib
     ( someFunc
     ) where
 
-someFunc :: IO ()
-someFunc = putStrLn "Hello, world!"
+import Picker
+import Data.List.NonEmpty
 
-otherThing = someFunc
+someFunc :: IO ()
+someFunc = print (pick (maxBy id) (1 :| [2, 3, 5, 67, 2, 53, 356]))
