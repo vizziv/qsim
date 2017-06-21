@@ -2,58 +2,52 @@
 
 module Picker
   ( Picker
-  , pick
-  , maxBy
-  , minBy
-  , maxWeightedBy
-  , minWeightedBy
+  , max
+  , min
+  , maxWeighted
+  , minWeighted
   ) where
 
+import Prelude hiding ( min, max )
 import Control.Lens ( (&), (%~), _1, mapped )
 import Control.Monad.Writer ( Writer, runWriter, tell )
 import Data.Function ( on )
 import Data.Semigroup ( Semigroup, Max(..), Min(..), Option(..) )
 
 -- A function that assigns a weight to each item in a collection.
--- By parametricity, a `Picker` cannot change the items in the collection.
+--  parametricity, a `Picker` cannot change the items in the collection.
 type Picker item weight =
   forall f i. Traversable f =>
   (i -> item) -> f i -> f (i, weight)
 
-pick :: Traversable f => Picker a w -> f a -> f (a, w)
-pick p xs = p id xs
+-- Type signature glossary:
+-- * k: key
+-- * w: weight
+-- * s: semigroup
 
--- The idea is that `dir` is either `Min` or `Max`.
-optWeightedBy ::
-  (Eq s, Semigroup s) =>
-  (key -> s) -> weight -> (item -> (key, weight)) -> Picker item weight
-optWeightedBy dir zero metricWeight item xs = ys
+-- `dir` should be `Max` or `Min`.
+optWeighted :: (Eq s, Semigroup s) => (k -> s) -> w -> Picker (k, w) w
+optWeighted dir zero item xs = ys
   where
-    (ys, metricMax) = runWriter (traverse go xs)
-    mw = metricWeight . item & mapped . _1 %~ Option . Just . dir
+    (ys, keyMax) = runWriter (traverse go xs)
+    keyWeight = item & mapped . _1 %~ Option . Just . dir
     go i = do
-      let (metricMe, weightMe) = mw i
-          weight = if metricMe == metricMax then weightMe else zero
-      tell metricMe
+      let (keyMe, weightMe) = keyWeight i
+          weight = if keyMe == keyMax then weightMe else zero
+      tell keyMe
       return (i, weight)
 
-maxWeightedBy ::
-  Ord key =>
-  weight -> (item -> (key, weight)) -> Picker item weight
-maxWeightedBy = optWeightedBy Max
+maxWeighted :: Ord k => w -> Picker (k, w) w
+maxWeighted = optWeighted Max
 
-minWeightedBy ::
-  Ord key =>
-  weight -> (item -> (key, weight)) -> Picker item weight
-minWeightedBy = optWeightedBy Min
+minWeighted :: Ord k => w -> Picker (k, w) w
+minWeighted = optWeighted Min
 
-optBy ::
-  (Eq s, Semigroup s, Num weight) =>
-  (key -> s) -> (item -> key) -> Picker item weight
-optBy con metric = optWeightedBy con 0 ((,1) . metric)
+opt :: (Eq s, Semigroup s, Num w) => (k -> s) -> Picker k w
+opt con item = optWeighted con 0 ((,1) . item)
 
-maxBy :: (Ord key, Num weight) => (item -> key) -> Picker item weight
-maxBy = optBy Max
+max :: (Ord k, Num w) => Picker k w
+max = opt Max
 
-minBy :: (Ord key, Num weight) => (item -> key) -> Picker item weight
-minBy = optBy Min
+min :: (Ord k, Num w) => Picker k w
+min = opt Min

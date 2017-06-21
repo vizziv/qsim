@@ -6,7 +6,7 @@ module Lib
     ( someFunc
     ) where
 
-import Picker
+import qualified Picker ( max )
 
 someFunc :: IO ()
-someFunc = print (pick (maxBy id) [1, 2, 3, 2, 3, 0])
+someFunc = print (Picker.max id [1, 2, 3, 2, 3, 0])
