@@ -24,8 +24,10 @@ findMin (Hp kv _) = kv
 singleton :: KeyVal k v -> Heap k v
 singleton kv = Hp kv []
 
-insert :: Ord k => KeyVal k v -> Heap k v -> Heap k v
-insert = merge . singleton
+insert :: Ord k => KeyVal k v -> Maybe (Heap k v) -> Heap k v
+insert kv Nothing = singleton kv
+insert kv (Just h) = merge (singleton kv) h
+
 
 merge :: Ord k => Heap k v -> Heap k v -> Heap k v
 merge h1@(Hp kv1 hs1) h2@(Hp kv2 hs2)
