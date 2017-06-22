@@ -5,8 +5,8 @@ module Picker
   , max
   , min
   , maxWeighted
-  , minWeighted
-  ) where
+  , minWeighted )
+  where
 
 import Prelude hiding ( min, max )
 import Control.Lens ( (&), (%~), _1, mapped )
