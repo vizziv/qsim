@@ -1,4 +1,4 @@
-{-# LANGUAGE ExplicitForAll, Rank2Types, TupleSections #-}
+{-# LANGUAGE RankNTypes, TupleSections #-}
 
 module Picker
   ( Picker
