@@ -42,7 +42,7 @@ class IsJob job where
   ageAtGrade :: job -> Grade -> Time
   ageAtGrade = ageAtGradeDefault
   gradeAtTime ::
-    (Functor f, Foldable1 f) =>
+    (Foldable1 f, Functor f) =>
     KeyVal Grade (f job) -> Time -> Grade
   gradeAtTime = gradeAtTimeDefault
 
@@ -50,7 +50,7 @@ ageAtGradeDefault :: IsJob job => job -> Grade -> Time
 ageAtGradeDefault j g = ageOf (j `withGrade` g) - ageOf j
 
 gradeAtTimeDefault ::
-  (Functor f, Foldable1 f, IsJob job) =>
+  (IsJob job, Foldable1 f, Functor f) =>
   KeyVal Grade (f job) -> Time -> Grade
 gradeAtTimeDefault (Kv gOrig jsOrig) t =
   case bisect Bs{..} timeAtGrade t of
@@ -60,7 +60,6 @@ gradeAtTimeDefault (Kv gOrig jsOrig) t =
     BrTooLow -> error "gradeAtTime: bisection failed. Maybe bad input?"
     BrJustRight gTarget -> gTarget
   where
-    totalAgeOf js = sum (fmap ageOf js)
     totalAgeOrig = totalAgeOf jsOrig
     timeAtGrade g = totalAgeOf (fmap (`withGrade` g) jsOrig) - totalAgeOrig
     xMin = gOrig
@@ -68,6 +67,9 @@ gradeAtTimeDefault (Kv gOrig jsOrig) t =
     xGuess = xMin + 2*dxGuess
     dxGuess = 1.0
     dyEpsilon = 1e-12
+
+totalAgeOf :: (IsJob job, Foldable f, Functor f) => f job -> Time
+totalAgeOf js = sum (fmap ageOf js)
 
 randomJob :: (IsJob job, RandomGen g) => g -> (job, g)
 randomJob gen =
@@ -104,6 +106,7 @@ data JobOptimal = Jo{
   } deriving Show
 
 instance IsJob JobOptimal where
+
   fromJb jb@Jb{..} = Jo{
       ageFirst = ageStart
     , ageRest = ageStart
@@ -134,6 +137,76 @@ instance IsJob JobOptimal where
           , jbJo = jbPost
           }
       Jb{..} = jbJo
+
+-- SERPT first: grade is expected size, tasks served one by one.
+newtype JobSerptFirst = Jsf { joJsf :: JobOptimal }
+
+instance IsJob JobSerptFirst where
+
+  fromJb = Jsf . fromJb
+
+  ageOf = ageOf . joJsf
+
+  gradeOf (Jsf Jo{..}) = Grade $ xFirst + (fromIntegral numRest * xRest)
+    where
+      Time xFirst = ageFirst
+      Time xRest = ageRest
+
+  withGrade (Jsf{..}) (Grade s) =
+    Jsf joJsf{ ageFirst = Time $ s - (fromIntegral numRest * xRest) }
+    where
+      Time xRest = ageRest
+      Jo{..} = joJsf
+
+  nextTransition Jsf{..} = (Jsf joPre, Jsf <$> joqPost)
+    where
+      (joPre, joqPost) = nextTransition joJsf
+
+  gradeAtTime = gradeAtTimeSerpt
+
+-- SERPT parallel: grade is expected size, tasks served in parallel.
+data JobSerptParallel = Jsp{
+    ageAll :: Time
+  , numAll :: Int
+  , jbJsp :: JobBase
+  } deriving Show
+
+instance IsJob JobSerptParallel where
+
+  fromJb jb@Jb{..} = Jsp{
+      ageAll = ageStart
+    , numAll = length agesDone
+    , jbJsp = jbPrepareParallel jb
+    }
+
+  ageOf Jsp{..} = fromIntegral numAll * ageAll
+
+  gradeOf j = Grade s
+    where
+      Time s = ageOf j
+
+  withGrade j@Jsp{..} (Grade s) =
+    j{ ageAll = Time $ s / fromIntegral numAll }
+
+  nextTransition j@Jsp{..} = (jPre, jqPost)
+    where
+      jPre = j{ ageAll = Ne.head agesDone }
+      jqPost = do
+        jbPost <- jbTransitionFirst jbJsp
+        return jPre{
+            numAll = numAll - 1
+          , jbJsp = jbPost
+          }
+      Jb{..} = jbJsp
+
+  gradeAtTime = gradeAtTimeSerpt
+
+-- For SERPT, grade is age, so we can compute gradeAtTime exactly.
+gradeAtTimeSerpt ::
+  (IsJob job, Foldable1 f, Functor f) =>
+  KeyVal Grade (f job) -> Time -> Grade
+gradeAtTimeSerpt (Kv (Grade s) js) (Time t) =
+  Grade $ (t / fromIntegral (length js)) + s
 
 jbPrepareFirst :: JobBase -> JobBase
 jbPrepareFirst = id
