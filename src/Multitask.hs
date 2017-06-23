@@ -11,6 +11,7 @@ module Multitask
 import System.Random
 
 import Heap
+import Job
 import Stream
 
 data Timed a = Timed Time a
