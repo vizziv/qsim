@@ -1,4 +1,10 @@
-{-# LANGUAGE DeriveFoldable, DeriveFunctor, DeriveTraversable #-}
+{-# LANGUAGE
+    DeriveFoldable
+  , DeriveFunctor
+  , DeriveTraversable
+  , DeriveAnyClass
+  , StandaloneDeriving
+#-}
 
 module Heap
   ( Heap
@@ -11,12 +17,14 @@ module Heap
   ) where
 
 import Data.Function ( on )
+import Data.Semigroup.Foldable ( Foldable1 )
 
 
 -- Pairing heaps.
 
 data Heap k v = Hp (KeyVal k v) [Heap k v]
   deriving (Show, Foldable, Functor, Traversable)
+deriving instance Foldable1 (Heap k)
 
 findMin :: Heap k v -> KeyVal k v
 findMin (Hp kv _) = kv
@@ -27,7 +35,6 @@ singleton kv = Hp kv []
 insert :: Ord k => KeyVal k v -> Maybe (Heap k v) -> Heap k v
 insert kv Nothing = singleton kv
 insert kv (Just h) = merge (singleton kv) h
-
 
 merge :: Ord k => Heap k v -> Heap k v -> Heap k v
 merge h1@(Hp kv1 hs1) h2@(Hp kv2 hs2)
@@ -48,7 +55,7 @@ deleteMin (Hp kv hs) = Just (mergeAll hs)
 -- For storing values sorted by a key in a heap.
 
 data KeyVal k v = Kv { kvKey :: k, kvVal :: v }
-  deriving (Show, Foldable, Functor, Traversable)
+  deriving (Show, Foldable, Functor, Traversable, Foldable1)
 
 instance Eq k => Eq (KeyVal k v) where
   (==) = (==) `on` kvKey

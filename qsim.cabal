@@ -17,7 +17,8 @@ library
   hs-source-dirs:      src
   exposed-modules:     Lib
                      , Multitask
-  other-modules:       Heap
+  other-modules:       Bisect
+                     , Heap
                      , Picker
                      , Stream
   build-depends:       base >= 4.7 && < 5

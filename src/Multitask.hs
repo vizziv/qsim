@@ -11,18 +11,18 @@ module Multitask
   , simulate
   ) where
 
-import Data.List.NonEmpty ( NonEmpty(..) )
-import qualified Data.List.NonEmpty as Ne
+import Data.Semigroup.Foldable ( Foldable1 )
 import System.Random
 
+import Bisect
 import Heap
 import Stream
 
 newtype Time = Time Double
-  deriving (Show, Eq, Ord, Num, Fractional)
+  deriving (Show, Eq, Ord, Num, Fractional, Real)
 
 newtype Grade = Grade Double
-  deriving (Show, Eq, Ord, Num, Fractional)
+  deriving (Show, Eq, Ord, Num, Fractional, Real)
 
 data Timed a = Timed Time a
   deriving (Show, Eq, Ord)
@@ -44,47 +44,34 @@ class IsJob job where
   -- Gives state of the job right before and right after its next transition.
   nextTransition :: job -> (job, Maybe job)
 
-  atGrade :: job -> Grade -> (Time, job)
-  jOld `atGrade` g = (ageOf jNew - ageOf jOld, jNew)
+  ageAtGrade :: job -> Grade -> Time
+  ageAtGrade j g = ageOf (j `withGrade` g) - ageOf j
+
+  gradeAtTime ::
+    (Functor f, Foldable1 f) =>
+    KeyVal Grade (f job) -> Time -> Grade
+  gradeAtTime (Kv gOrig jsOrig) t =
+    case bisect bs timeAtGrade t of
+      -- We have no upper bound, so we shouldn't hit this case.
+      BrTooHigh -> error "gradeAtTime: bisection failed. Maybe bad function?"
+      -- If we pass a positive time, we shouldn't hit this case.
+      BrTooLow -> error "gradeAtTime: bisection failed. Maybe bad input?"
+      BrJustRight gTarget -> gTarget
     where
-      jNew = jOld `withGrade` g
-
-  atTime :: NonEmpty job -> Time -> (Grade, NonEmpty job)
-  jsOld `atTime` tTarget = go gOld (gOld + dgGuess) jsOld
-    where
-      -- TODO: figure out approximation subtleties.
-      epsilon = Time 1e-16
-      gOld = gradeOf (Ne.head jsOld)
-      dgGuess = Grade 1.0
-      go gLow gHigh jsPrev
-        | abs (t - tTarget) < epsilon = (g, js)
-        | t < tTarget = error "TODO: bisection"
-        | t > tTarget = error "TODO: bisection"
-        where
-          g = (gLow + gHigh) / 2
-          js = fmap (`withGrade` g) jsPrev
-          t = sum (fmap ageOf js)
-
-compareApprox epsilon x y
-  | abs (x - y) < epsilon = EQ
-  | otherwise = compare x y
-
-bisect epsilon x0 dx0 f y =
-  case compareApprox epsilon (f x0) y of
-    LT -> searchUp x0 dx0
-    EQ -> x0
-    GT -> searchDown x0 dx0
-  where
-    searchUp x dx = error "TODO"
-    searchDown x dx = error "TODO"
-    refine xLow xHigh = error "TODO"
+      totalAgeOf js = sum (fmap ageOf js)
+      totalAgeOrig = totalAgeOf jsOrig
+      timeAtGrade g = totalAgeOf (fmap (`withGrade` g) jsOrig) - totalAgeOrig
+      bs = Bs{..}
+      xMin = gOrig
+      xMax = positiveInfinity
+      xGuess = xMin + (2 * dxGuess)
+      dxGuess = 1.0
+      dyEpsilon = 1e-12
 
 data Event = EvEnter | EvExit
 
 simulate :: IsJob job => Stream (Timed job) -> Stream (Timed Event)
 simulate arrs = unfold sim (Env 0 arrs Nothing [])
 
+sim :: IsJob job => Env job -> (Timed Event, Env job)
 sim Env{..} = undefined
-
-
--- kv :: IsJob job =>
