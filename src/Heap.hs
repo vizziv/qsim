@@ -4,11 +4,14 @@
   , DeriveTraversable
   , DeriveAnyClass
   , StandaloneDeriving
+  , TemplateHaskell
 #-}
 
 module Heap
   ( Heap
   , KeyVal(..)
+  , key
+  , val
   , findMin
   , singleton
   , insert
@@ -16,9 +19,9 @@ module Heap
   , deleteMin
   ) where
 
+import Control.Lens.TH
 import Data.Function ( on )
 import Data.Semigroup.Foldable ( Foldable1 )
-
 
 -- Pairing heaps.
 
@@ -32,9 +35,9 @@ findMin (Hp kv _) = kv
 singleton :: KeyVal k v -> Heap k v
 singleton kv = Hp kv []
 
-insert :: Ord k => KeyVal k v -> Maybe (Heap k v) -> Heap k v
-insert kv Nothing = singleton kv
-insert kv (Just h) = merge (singleton kv) h
+insert :: Ord k => KeyVal k v -> Maybe (Heap k v) -> Maybe (Heap k v)
+insert kv Nothing = Just $ singleton kv
+insert kv (Just h) = Just $ merge (singleton kv) h
 
 merge :: Ord k => Heap k v -> Heap k v -> Heap k v
 merge h1@(Hp kv1 hs1) h2@(Hp kv2 hs2)
@@ -51,14 +54,13 @@ deleteMin (Hp kv hs) = Just (mergeAll hs)
     mergeAll [h1, h2] = merge h1 h2
     mergeAll (h1 : h2 : hs) = merge (merge h1 h2) (mergeAll hs)
 
-
 -- For storing values sorted by a key in a heap.
-
-data KeyVal k v = Kv { kvKey :: k, kvVal :: v }
+data KeyVal k v = Kv { _key :: k, _val :: v }
   deriving (Show, Foldable, Functor, Traversable, Foldable1)
+makeLenses ''KeyVal
 
 instance Eq k => Eq (KeyVal k v) where
-  (==) = (==) `on` kvKey
+  (==) = (==) `on` _key
 
 instance Ord k => Ord (KeyVal k v) where
-  compare = compare `on` kvKey
+  compare = compare `on` _key

@@ -2,18 +2,27 @@
     DeriveFoldable
   , DeriveFunctor
   , DeriveTraversable
+  , TemplateHaskell
 #-}
 
 module Stream
-  ( Stream(Cons)
+  ( Stream( Cons )
+  , head
+  , tail
   , unfold
   ) where
 
-data Stream a = Cons a (Stream a)
-  deriving (Show, Foldable, Functor, Traversable)
+import Prelude hiding ( head, tail )
+import Control.Lens.TH
 
-unfold :: (b -> (a, b)) -> b -> Stream a
-unfold f sOld = let (x, sNew) = f sOld in Cons x (unfold f sNew)
+data Stream a = Cons { _head :: a, _tail :: (Stream a) }
+  deriving (Show, Foldable, Functor, Traversable)
+makeLenses ''Stream
+
+unfold :: (b -> ([a], b)) -> b -> Stream a
+unfold f sOld = foldr Cons (unfold f sNew) xs
+  where
+    (xs, sNew) = f sOld
 
 streamTake :: Int -> Stream a -> [a]
 streamTake 0 _ = []

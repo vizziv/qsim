@@ -9,8 +9,11 @@ module Job
   , IsJob(..)
   , JobOptimal
   , randomJob
+  , grade
+  , totalAgeOf
   ) where
 
+import Control.Lens ( Lens', lens )
 import Control.Monad.State ( runState, state )
 import Data.Foldable ( foldl' )
 import Data.List.NonEmpty ( NonEmpty(..) )
@@ -68,8 +71,11 @@ gradeAtTimeDefault (Kv gOrig jsOrig) t =
     dxGuess = 1.0
     dyEpsilon = 1e-12
 
+grade :: IsJob job => Lens' job Grade
+grade = lens gradeOf withGrade
+
 totalAgeOf :: (IsJob job, Foldable f, Functor f) => f job -> Time
-totalAgeOf js = sum (fmap ageOf js)
+totalAgeOf = sum . fmap ageOf
 
 randomJob :: (IsJob job, RandomGen g) => g -> (job, g)
 randomJob gen =
