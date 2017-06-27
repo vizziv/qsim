@@ -11,7 +11,7 @@ import Control.Monad.Writer
 import Data.Functor.Compose ( Compose(..) )
 import Data.List.NonEmpty ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as Ne
-import Data.Foldable ( for_ )
+import Data.Foldable ( for_, traverse_ )
 import Data.Traversable ( for )
 import System.Random
 
@@ -20,15 +20,20 @@ import Job
 import Stream ( Stream )
 import qualified Stream
 
-data Timed a = Timed Time a
+data Timed a = Timed { _delay :: Time, _object :: a }
   deriving (Show, Eq, Ord)
+makeLenses ''Timed
+
+newtype Future a = Future { _fromFuture :: a }
+  deriving (Show, Eq, Ord)
+makeLenses ''Future
 
 data Frames job = Frames{
     -- Grade of a frame itself is the current grade of all of its jobs.
     -- Within a frame, jobs are keyed by the grade of their next transition.
     -- Foreground frame contains active jobs and has minimal current grade.
-    _foreground :: KeyVal Grade (Heap Grade job)
-  , _background :: Maybe (Heap Grade (Heap Grade job))
+    _foreground :: KeyVal Grade (Heap (Future Grade) job)
+  , _background :: Maybe (Heap Grade (Heap (Future Grade) job))
   } deriving Show
 makeLenses ''Frames
 
@@ -39,10 +44,10 @@ data Env job = Env{
   } deriving Show
 makeLenses ''Env
 
-fg :: Traversal' (Env job) (KeyVal Grade (Heap Grade job))
+fg :: Traversal' (Env job) (KeyVal Grade (Heap (Future Grade) job))
 fg = framesq . _Just . foreground
 
-bgq :: Traversal' (Env job) (Maybe (Heap Grade (Heap Grade job)))
+bgq :: Traversal' (Env job) (Maybe (Heap Grade (Heap (Future Grade) job)))
 bgq = framesq . _Just . background
 
 data Action = AcArrival | AcTransition | AcMerge
@@ -60,14 +65,14 @@ sim = do
   tArr <- timeArrival
   tqTrans <- timeqTransition
   tqMerge <- timeqMerge
-  case minimum . Compose $
+  case view val . minimum . Compose $
        [ Just (Kv tArr AcArrival)
        , (Kv ?? AcTransition) <$> tqTrans
        , (Kv ?? AcMerge) <$> tqMerge
        ] of
-    Kv t AcArrival -> do
-      Timed t j <- doArrival
-      frameqFg <- doAdvance t
+    AcArrival -> do
+      j <- arrive
+      frameqFg <- preuse fg
       case frameqFg of
         Nothing ->
           framesq ?= Frames (frameOf j) Nothing
@@ -76,86 +81,90 @@ sim = do
         Just frameFg | otherwise -> do
           fg .= frameOf j
           bgq %= insert frameFg
-    Kv t AcTransition -> do
-      timeSinceEvent += t
-      frameFg <- preuse fg
-      for_ frameFg $ \(Kv gOld hOld) -> do
-        let jqNew = findMin hOld ^. val . to transitioned
-            hqNew = deleteMin hOld & _Just . traverse . grade .~ gOld
-        when (null jqNew) doExit
-        case hqNew of
+    AcTransition -> do
+      preuse (fg . val . keyMin) >>= traverse_ serveUntilGrade
+      frameqFg <- preuse fg
+      for_ frameqFg $ \(Kv g hPre) -> do
+        let jqPost = findMin hPre ^. val . to transitioned
+            hqPost = deleteMin hPre
+        when (null jqPost) depart
+        case hqPost of
           Nothing ->
-            framesq .= ((Frames ?? Nothing) . frameOf <$> jqNew)
-          Just hNew ->
-            case jqNew of
+            framesq .= ((Frames ?? Nothing) . frameOf <$> jqPost)
+          Just hPost ->
+            case jqPost of
               Nothing -> do
-                fg . key .= findMin hNew ^. val . to gradeOfFuture
-                fg . val .= hNew
-              Just jNew -> do
-                fg .= frameOf jNew
-                bgq %= insert (Kv gOld hNew)
-    Kv t AcMerge -> do
-      timeSinceEvent += t
+                fg . key .= findMin hPost ^. val . to gradeFuture . fromFuture
+                fg . val .= hPost
+              Just jPost -> do
+                fg .= frameOf jPost
+                bgq %= insert (Kv g hPost)
+    AcMerge -> do
       frameqBgMin <- preuse (bgq . _Just . to findMin)
-      for_ frameqBgMin $ \(Kv gBg hBg) -> do
-        fg . key .= gBg
-        fg . val . traverse . grade .= gBg
-        fg . val %= merge hBg
+      for_ frameqBgMin $ \(Kv g h) -> do
+        serveUntilGrade (Future g)
+        fg . val %= merge h
         bgq %= (>>= deleteMin)
 
 timeArrival :: IsJob job => Simulation job Time
 timeArrival = do
   tEv <- use timeSinceEvent
-  Timed tArr _ <- use (arrivals . Stream.head)
+  tArr <- use (arrivals . Stream.head . delay)
   return (tArr - tEv)
 
 timeqTransition :: IsJob job => Simulation job (Maybe Time)
-timeqTransition = do
-  hqFg <- preuse (fg . val)
-  for hqFg $ \hFg -> timeUntilGrade (findMin hFg ^. key)
+timeqTransition =
+  preuse (fg . val . keyMin) >>= traverse timeUntilGrade
 
 timeqMerge :: IsJob job => Simulation job (Maybe Time)
-timeqMerge = do
-  gqBg <- preuse (bgq . _Just . to findMin . key)
-  traverse timeUntilGrade gqBg
+timeqMerge =
+  preuse (bgq . _Just . keyMin . to Future) >>= traverse timeUntilGrade
 
-timeUntilGrade :: IsJob job => Grade -> Simulation job Time
-timeUntilGrade g = do
-  hqFg <- preuse (fg . val)
-  let hFg = maybe (error "timeUntilGrade: no jobs in system") id hqFg
-      tNow = totalAgeOf hFg
-      tFuture = totalAgeOf (hFg & traverse . grade .~ g)
+timeUntilGrade :: IsJob job => Future Grade -> Simulation job Time
+timeUntilGrade (Future g) = do
+  hq <- preuse (fg . val)
+  let h = maybe (error "timeUntilGrade: no jobs in system") id hq
+      tNow = totalAgeOf h
+      tFuture = totalAgeOf (h & mapped . grade .~ g)
   return (tFuture - tNow)
 
-doArrival :: IsJob job => Simulation job (Timed job)
-doArrival = do
-  timeSinceEvent .= 0
-  arr@(Timed t _) <- use (arrivals . Stream.head)
+arrive :: IsJob job => Simulation job job
+arrive = do
+  arr@(Timed t j) <- use (arrivals . Stream.head)
+  serveUntilTime t
   arrivals %= view Stream.tail
+  timeSinceEvent .= 0
   tell [Timed t EvEnter]
-  return arr
+  return j
 
-doExit :: IsJob job => Simulation job ()
-doExit = do
+depart :: IsJob job => Simulation job ()
+depart = do
   t <- use timeSinceEvent
+  arrivals . Stream.head . delay -= t
   timeSinceEvent .= 0
   tell [Timed t EvExit]
 
-doAdvance ::
-  IsJob job =>
-  Time ->
-  Simulation job (Maybe (KeyVal Grade (Heap Grade job)))
-doAdvance t = do
-  frameqFg <- preuse fg
-  return $ frameqFg <&> \frameFg@(Kv _ hFg) ->
-    let gFg = gradeAtTime frameFg t
-    in Kv gFg (hFg & traverse . grade .~ gFg)
+serveUntilTime :: IsJob job => Time -> Simulation job ()
+serveUntilTime t =
+  (preuse fg >>=) . traverse_ $ \frame ->
+    serveUntilGrade (Future $ gradeAtTime frame t)
 
-frameOf :: IsJob job => job -> KeyVal Grade (Heap Grade job)
-frameOf j = Kv (gradeOf j) (singleton (Kv (gradeOfFuture j) j))
+serveUntilGrade :: IsJob job => Future Grade -> Simulation job ()
+serveUntilGrade (Future g) = do
+  tBefore <- totalAgeOf . Compose <$> preuse (fg . val)
+  fg . key .= g
+  fg . val . traverse . grade .= g
+  tAfter <- totalAgeOf . Compose <$> preuse (fg . val)
+  timeSinceEvent += tAfter - tBefore
 
-gradeOfFuture :: IsJob job => job -> Grade
-gradeOfFuture = gradeOf . fst . nextTransition
+frameOf :: IsJob job => job -> KeyVal Grade (Heap (Future Grade) job)
+frameOf j = Kv (gradeOf j) (singleton (Kv (gradeFuture j) j))
+
+gradeFuture :: IsJob job => job -> Future Grade
+gradeFuture = Future . gradeOf . fst . nextTransition
 
 transitioned :: IsJob job => job -> Maybe job
 transitioned = snd . nextTransition
+
+keyMin :: Getter (Heap k v) k
+keyMin = to findMin . key

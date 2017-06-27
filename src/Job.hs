@@ -8,6 +8,8 @@ module Job
   , Grade
   , IsJob(..)
   , JobOptimal
+  , JobSerptParallel
+  , JobBase(..)
   , randomJob
   , grade
   , totalAgeOf
@@ -146,6 +148,7 @@ instance IsJob JobOptimal where
 
 -- SERPT first: grade is expected size, tasks served one by one.
 newtype JobSerptFirst = Jsf { joJsf :: JobOptimal }
+  deriving Show
 
 instance IsJob JobSerptFirst where
 
