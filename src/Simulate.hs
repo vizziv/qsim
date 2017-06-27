@@ -6,7 +6,8 @@
 #-}
 
 module Simulate
-  ( simulate
+  ( Event(..)
+  , simulate
   ) where
 
 import Control.Lens
@@ -201,5 +202,3 @@ transitioned = snd . nextTransition
 
 keyMin :: Getter (Heap k v) k
 keyMin = to findMin . key
-
--- traverse_ (putStrLn . (++"\n") . show) . zip [0..] . Stream.take 100 $ simulate jsfs
