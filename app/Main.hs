@@ -1,6 +1,8 @@
 module Main where
 
-import Lib
+import Arrival
+import Job
+import Multitask
 
 main :: IO ()
-main = someFunc
+main = putStrLn "Load me in ghci."

@@ -15,13 +15,11 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Lib
-                     , Multitask
-  other-modules:       Arrival
+  exposed-modules:     Multitask
+                     , Arrival
                      , Bisect
                      , Heap
                      , Job
-                     , Picker
                      , Stream
   build-depends:       base >= 4.7 && < 5
                      , lens

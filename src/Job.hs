@@ -233,7 +233,7 @@ repeated :: Int -> (a -> a) -> a -> a
 repeated n f x = foldl' (flip ($)) x (replicate n f)
 
 paretoCdfInv :: Time -> Double -> Time
-paretoCdfInv (Time x) cdf = Time $ x * (1/(sqrt (1 - cdf)) - 1)
+paretoCdfInv (Time x) cdf = Time $ x / sqrt (1 - cdf)
 
 -- The profit function for shifted Pareto of shape 2 uses `magic`.
 -- We compute fair reward using the inverse, `magicInv`.

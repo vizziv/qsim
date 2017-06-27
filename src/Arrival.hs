@@ -2,7 +2,7 @@
 
 module Arrival
   ( ArrivalConfig(..)
-  , Timed(..)
+  , Delayed(..)
   , delay
   , object
   , arrivalStream
@@ -16,18 +16,18 @@ import Job
 import Stream ( Stream )
 import qualified Stream
 
-data Timed a = Timed { _delay :: Time, _object :: a }
+data Delayed a = Delayed { _delay :: Time, _object :: a }
   deriving (Show, Eq, Ord)
-makeLenses ''Timed
+makeLenses ''Delayed
 
-data ArrivalConfig = Ac{
+data ArrivalConfig job = Ac{
     load :: Double
   , ageStartRange :: (Time, Time)
   , numTasksRange :: (Int, Int)
   , seed :: Int
   } deriving Show
 
-arrivalStream :: IsJob job => ArrivalConfig -> Stream (Timed job)
+arrivalStream :: IsJob job => ArrivalConfig job -> Stream (Delayed job)
 arrivalStream Ac{..} = Stream.unfold (runState go) (mkStdGen seed, 0)
   where
     numTasksMean = 1/2 * sumOf (both . to fromIntegral) numTasksRange
@@ -41,7 +41,7 @@ arrivalStream Ac{..} = Stream.unfold (runState go) (mkStdGen seed, 0)
         j <- state $ randomJob numTasks ageStart
         t <- fmap expCdfInv . state $ randomR (0, 1)
         keep <- fmap (< load) . state $ randomR (0, 1)
-        return (Timed t j, keep)
+        return (Delayed t j, keep)
       case keep of
         True -> do
           t <- use _2

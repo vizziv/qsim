@@ -10,9 +10,10 @@ module Stream
   , head
   , tail
   , unfold
+  , take
   ) where
 
-import Prelude hiding ( head, tail )
+import Prelude hiding ( head, tail, take )
 import Control.Lens.TH
 
 data Stream a = Cons { _head :: a, _tail :: (Stream a) }
@@ -24,6 +25,6 @@ unfold f sOld = foldr Cons (unfold f sNew) xs
   where
     (xs, sNew) = f sOld
 
-streamTake :: Int -> Stream a -> [a]
-streamTake 0 _ = []
-streamTake n (Cons x xs) = x : streamTake (n-1) xs
+take :: Int -> Stream a -> [a]
+take 0 _ = []
+take n (Cons x xs) = x : take (n-1) xs

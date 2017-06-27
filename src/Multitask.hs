@@ -1,7 +1,9 @@
 {-# LANGUAGE
     FlexibleContexts
   , ScopedTypeVariables
-  , TemplateHaskell #-}
+  , TemplateHaskell
+  , TupleSections
+#-}
 
 module Multitask
   ( simulate
@@ -34,7 +36,7 @@ makeLenses ''Frames
 
 data Env job = Env{
     _timeSinceEvent :: Time
-  , _arrivals :: Stream (Timed job)
+  , _arrivals :: Stream (Delayed job)
   , _framesq :: Maybe (Frames job)
   } deriving Show
 makeLenses ''Env
@@ -46,26 +48,34 @@ bgq :: Traversal' (Env job) (Maybe (Heap Grade (Heap (Future Grade) job)))
 bgq = framesq . _Just . background
 
 data Action = AcArrival | AcTransition | AcMerge
+  deriving (Show, Eq, Ord)
 
 data Event = EvEnter | EvExit
+  deriving (Show, Eq, Ord)
 
-simulate :: IsJob job => Stream (Timed job) -> Stream (Timed Event)
+simulate ::
+  IsJob job =>
+  Stream (Delayed job) ->
+  Stream (Either (String, Env job) (Delayed Event))
 simulate arrs =
   Stream.unfold (runState (execWriterT sim)) (Env 0 arrs Nothing)
 
-type Simulation job a = WriterT [Timed Event] (State (Env job)) a
+type Simulation job a =
+  WriterT [Either (String, Env job) (Delayed Event)] (State (Env job)) a
 
 sim :: IsJob job => Simulation job ()
 sim = do
   tArr <- timeArrival
   tqTrans <- timeqTransition
   tqMerge <- timeqMerge
+  debug ("top: " ++ show tArr ++ ", " ++ show tqTrans ++ ", " ++ show tqMerge)
   case view val . minimum . Compose $
        [ Just (Kv tArr AcArrival)
        , (Kv ?? AcTransition) <$> tqTrans
        , (Kv ?? AcMerge) <$> tqMerge
        ] of
     AcArrival -> do
+      debug "AcArrival"
       j <- arrive
       frameqFg <- preuse fg
       case frameqFg of
@@ -77,35 +87,40 @@ sim = do
           fg .= frameOf j
           bgq %= insert frameFg
     AcTransition -> do
+      debug "AcTransition"
       preuse (fg . val . keyMin) >>= traverse_ serveUntilGrade
       frameqFg <- preuse fg
-      for_ frameqFg $ \(Kv g hPre) -> do
-        let jqPost = findMin hPre ^. val . to transitioned
-            hqPost = deleteMin hPre
-        when (null jqPost) depart
-        case hqPost of
-          Nothing ->
-            framesq .= ((Frames ?? Nothing) . frameOf <$> jqPost)
-          Just hPost ->
-            case jqPost of
-              Nothing -> do
-                fg . key .= findMin hPost ^. val . to gradeFuture . fromFuture
-                fg . val .= hPost
-              Just jPost -> do
-                fg .= frameOf jPost
-                bgq %= insert (Kv g hPost)
+      case frameqFg of
+        Nothing ->
+          error "sim, AcTransition: no foreground jobs"
+        Just (Kv g hPre) -> do
+          let jqPost = findMin hPre ^. val . to transitioned
+              hqPost = deleteMin hPre
+          when (null jqPost) depart
+          case hqPost of
+            Nothing ->
+              framesq .= ((Frames ?? Nothing) . frameOf <$> jqPost)
+            Just hPost ->
+              case jqPost of
+                Nothing -> do
+                  fg . key .= findMin hPost ^. val . to gradeFuture . fromFuture
+                  fg . val .= hPost
+                Just jPost -> do
+                  fg .= frameOf jPost
+                  bgq %= insert (Kv g hPost)
     AcMerge -> do
+      debug "AcMerge"
       frameqBgMin <- preuse (bgq . _Just . to findMin)
-      for_ frameqBgMin $ \(Kv g h) -> do
-        serveUntilGrade (Future g)
-        fg . val %= merge h
-        bgq %= (>>= deleteMin)
+      case frameqBgMin of
+        Nothing ->
+          error "sim, AcMerge: no background jobs"
+        Just (Kv g h) -> do
+          serveUntilGrade (Future g)
+          fg . val %= merge h
+          bgq %= (>>= deleteMin)
 
 timeArrival :: IsJob job => Simulation job Time
-timeArrival = do
-  tEv <- use timeSinceEvent
-  tArr <- use (arrivals . Stream.head . delay)
-  return (tArr - tEv)
+timeArrival = view delay <$> arrivalNext
 
 timeqTransition :: IsJob job => Simulation job (Maybe Time)
 timeqTransition =
@@ -125,11 +140,11 @@ timeUntilGrade (Future g) = do
 
 arrive :: IsJob job => Simulation job job
 arrive = do
-  arr@(Timed t j) <- use (arrivals . Stream.head)
+  arr@(Delayed t j) <- arrivalNext
   serveUntilTime t
   arrivals %= view Stream.tail
   timeSinceEvent .= 0
-  tell [Timed t EvEnter]
+  tell [Right $ Delayed t EvEnter]
   return j
 
 depart :: IsJob job => Simulation job ()
@@ -137,7 +152,7 @@ depart = do
   t <- use timeSinceEvent
   arrivals . Stream.head . delay -= t
   timeSinceEvent .= 0
-  tell [Timed t EvExit]
+  tell [Right $ Delayed t EvExit]
 
 serveUntilTime :: IsJob job => Time -> Simulation job ()
 serveUntilTime t =
@@ -151,6 +166,14 @@ serveUntilGrade (Future g) = do
   fg . val . each . grade .= g
   tAfter <- totalAgeOf . Compose <$> preuse (fg . val)
   timeSinceEvent += tAfter - tBefore
+
+arrivalNext :: IsJob job => Simulation job (Delayed job)
+arrivalNext = do
+  t <- use timeSinceEvent
+  use (arrivals . Stream.head) <&> delay -~ t
+
+debug :: IsJob job => String -> Simulation job ()
+debug msg = tell =<< (:[]) . Left . (msg,) <$> get
 
 frameOf :: IsJob job => job -> KeyVal Grade (Heap (Future Grade) job)
 frameOf j = Kv (gradeOf j) (singleton (Kv (gradeFuture j) j))
