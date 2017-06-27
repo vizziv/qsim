@@ -56,12 +56,13 @@ data Event = EvEnter | EvExit
 simulate ::
   IsJob job =>
   Stream (Delayed job) ->
-  Stream (Either (String, Env job) (Delayed Event))
+  Stream (Either (String, Maybe (Frames job)) (Delayed Event))
 simulate arrs =
   Stream.unfold (runState (execWriterT sim)) (Env 0 arrs Nothing)
 
-type Simulation job a =
-  WriterT [Either (String, Env job) (Delayed Event)] (State (Env job)) a
+type Simulation job =
+  WriterT [Either (String, Maybe (Frames job)) (Delayed Event)]
+  (State (Env job))
 
 sim :: IsJob job => Simulation job ()
 sim = do
@@ -75,8 +76,8 @@ sim = do
        , (Kv ?? AcMerge) <$> tqMerge
        ] of
     AcArrival -> do
-      debug "AcArrival"
       j <- arrive
+      debug "AcArrival"
       frameqFg <- preuse fg
       case frameqFg of
         Nothing ->
@@ -87,8 +88,8 @@ sim = do
           fg .= frameOf j
           bgq %= insert frameFg
     AcTransition -> do
-      debug "AcTransition"
       preuse (fg . val . keyMin) >>= traverse_ serveUntilGrade
+      debug "AcTransition"
       frameqFg <- preuse fg
       case frameqFg of
         Nothing ->
@@ -99,18 +100,33 @@ sim = do
           when (null jqPost) depart
           case hqPost of
             Nothing ->
-              framesq .= ((Frames ?? Nothing) . frameOf <$> jqPost)
+              case jqPost of
+                Nothing -> do
+                  frameqBg <- preuse (bgq . _Just . to findMin)
+                  case frameqBg of
+                    Nothing -> do
+                      framesq .= Nothing
+                      debug "singleton fg, exits, no bg"
+                    Just frameBg -> do
+                      bgq %= (>>= deleteMin)
+                      fg .= frameBg
+                      debug "singleton fg, exits, some bg"
+                Just jPost -> do
+                  fg .= frameOf jPost
+                  debug "singleton fg, stays"
             Just hPost ->
               case jqPost of
                 Nothing -> do
                   fg . key .= findMin hPost ^. val . to gradeFuture . fromFuture
                   fg . val .= hPost
+                  debug "multi fg, exits"
                 Just jPost -> do
                   fg .= frameOf jPost
                   bgq %= insert (Kv g hPost)
+                  debug "multi fg, stays"
     AcMerge -> do
-      debug "AcMerge"
       frameqBgMin <- preuse (bgq . _Just . to findMin)
+      debug "AcMerge"
       case frameqBgMin of
         Nothing ->
           error "sim, AcMerge: no background jobs"
@@ -120,7 +136,10 @@ sim = do
           bgq %= (>>= deleteMin)
 
 timeArrival :: IsJob job => Simulation job Time
-timeArrival = view delay <$> arrivalNext
+timeArrival = do
+  tEv <- use timeSinceEvent
+  tArr <- use (arrivals . Stream.head . delay)
+  return (tArr - tEv)
 
 timeqTransition :: IsJob job => Simulation job (Maybe Time)
 timeqTransition =
@@ -133,18 +152,19 @@ timeqMerge =
 timeUntilGrade :: IsJob job => Future Grade -> Simulation job Time
 timeUntilGrade (Future g) = do
   hq <- preuse (fg . val)
-  let h = maybe (error "timeUntilGrade: no jobs in system") id hq
+  let h = maybe (error "timeUntilGrade: no foreground jobs") id hq
       tNow = totalAgeOf h
       tFuture = totalAgeOf (h & each . grade .~ g)
   return (tFuture - tNow)
 
 arrive :: IsJob job => Simulation job job
 arrive = do
-  arr@(Delayed t j) <- arrivalNext
-  serveUntilTime t
+  Delayed tArr j <- use (arrivals . Stream.head)
+  tEv <- use timeSinceEvent
+  serveUntilTime (tArr - tEv)
   arrivals %= view Stream.tail
   timeSinceEvent .= 0
-  tell [Right $ Delayed t EvEnter]
+  tell [Right $ Delayed tArr EvEnter]
   return j
 
 depart :: IsJob job => Simulation job ()
@@ -167,13 +187,8 @@ serveUntilGrade (Future g) = do
   tAfter <- totalAgeOf . Compose <$> preuse (fg . val)
   timeSinceEvent += tAfter - tBefore
 
-arrivalNext :: IsJob job => Simulation job (Delayed job)
-arrivalNext = do
-  t <- use timeSinceEvent
-  use (arrivals . Stream.head) <&> delay -~ t
-
 debug :: IsJob job => String -> Simulation job ()
-debug msg = tell =<< (:[]) . Left . (msg,) <$> get
+debug msg = tell =<< (:[]) . Left . (msg,) <$> use framesq
 
 frameOf :: IsJob job => job -> KeyVal Grade (Heap (Future Grade) job)
 frameOf j = Kv (gradeOf j) (singleton (Kv (gradeFuture j) j))
@@ -186,3 +201,5 @@ transitioned = snd . nextTransition
 
 keyMin :: Getter (Heap k v) k
 keyMin = to findMin . key
+
+-- traverse_ (putStrLn . (++"\n") . show) . zip [0..] . Stream.take 100 $ simulate jsfs
