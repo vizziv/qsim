@@ -5,7 +5,7 @@
   , TupleSections
 #-}
 
-module Multitask
+module Simulate
   ( simulate
   ) where
 

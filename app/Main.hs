@@ -2,7 +2,7 @@ module Main where
 
 import Arrival
 import Job
-import Multitask
+import Simulate
 import Stream ( Stream )
 
 main :: IO ()
