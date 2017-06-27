@@ -5,7 +5,7 @@
   , RecordWildCards #-}
 
 module Bisect
-  ( BisectSettings(..)
+  ( BisectConfig(..)
   , BisectResult(..)
   , bisect
   , positiveInfinity
@@ -17,7 +17,7 @@ compareApprox epsilon x y
   | abs (x - y) < epsilon = EQ
   | otherwise = compare x y
 
-data BisectSettings a b = Bs{
+data BisectConfig a b = Bc{
     xMin :: a
   , xMax :: a
   , xGuess :: a
@@ -30,8 +30,8 @@ data BisectResult a = BrTooHigh | BrTooLow | BrJustRight a
 
 bisect ::
   (Fractional a, Num b, Ord a, Ord b) =>
-  BisectSettings a b -> (a -> b) -> b -> BisectResult a
-bisect Bs{..} f y
+  BisectConfig a b -> (a -> b) -> b -> BisectResult a
+bisect Bc{..} f y
   | f xMax < y = BrTooHigh
   | f xMin > y = BrTooLow
   | otherwise = BrJustRight $

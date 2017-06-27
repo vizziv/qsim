@@ -4,11 +4,12 @@
 #-}
 
 module Job
-  ( Time
-  , Grade
+  ( Time(..)
+  , Grade(..)
   , IsJob(..)
-  , JobOptimal
-  , JobSerptParallel
+  , JobOptimal(..)
+  , JobSerptParallel(..)
+  , JobSerptFirst(..)
   , JobBase(..)
   , randomJob
   , grade
@@ -27,7 +28,7 @@ import Bisect
 import Heap ( KeyVal(..) )
 
 newtype Time = Time Double
-  deriving (Show, Eq, Ord, Num, Fractional, Real)
+  deriving (Show, Eq, Ord, Num, Fractional, Real, Random)
 
 newtype Grade = Grade Double
   deriving (Show, Eq, Ord, Num, Fractional, Real)
@@ -58,7 +59,7 @@ gradeAtTimeDefault ::
   (IsJob job, Foldable1 f, Functor f) =>
   KeyVal Grade (f job) -> Time -> Grade
 gradeAtTimeDefault (Kv gOrig jsOrig) t =
-  case bisect Bs{..} timeAtGrade t of
+  case bisect Bc{..} timeAtGrade t of
     -- We have no upper bound, so we shouldn't hit this case.
     BrTooHigh -> error "gradeAtTime: bisection failed. Maybe bad function?"
     -- If we pass a positive time, we shouldn't hit this case.
@@ -79,18 +80,15 @@ grade = lens gradeOf withGrade
 totalAgeOf :: (IsJob job, Foldable f, Functor f) => f job -> Time
 totalAgeOf = sum . fmap ageOf
 
-randomJob :: (IsJob job, RandomGen g) => g -> (job, g)
-randomJob gen =
+randomJob :: (IsJob job, RandomGen g) => Int -> Time -> g -> (job, g)
+randomJob numTasks ageStart gen =
   flip runState gen $ do
-    numTasks <- genNumTasks
-    ageStart <- genAgeStart
-    agesDone <- traverse genPareto (ageStart :| replicate (numTasks - 1) ageStart)
+    agesDone <- traverse genPareto (neReplicate numTasks ageStart)
     return (fromJb Jb{..})
   where
-    genNumTasks = state (randomR (1, 7))
-    genAgeStart = return (Time 1.0)
     -- We rely on the fact that random for `Double` has a half-open range.
     genPareto age = paretoCdfInv age <$> state (randomR (0.0, 1.0))
+    neReplicate n x = x :| replicate (n - 1) x
 
 -- The different types are really different policies for the same jobs.
 -- All jobs have no precedence constraints.

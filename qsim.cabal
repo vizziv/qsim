@@ -17,7 +17,8 @@ library
   hs-source-dirs:      src
   exposed-modules:     Lib
                      , Multitask
-  other-modules:       Bisect
+  other-modules:       Arrival
+                     , Bisect
                      , Heap
                      , Job
                      , Picker

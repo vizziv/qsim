@@ -3,6 +3,8 @@
   , DeriveFunctor
   , DeriveTraversable
   , DeriveAnyClass
+  , FlexibleInstances
+  , MultiParamTypeClasses
   , StandaloneDeriving
   , TemplateHaskell
 #-}
@@ -19,7 +21,8 @@ module Heap
   , deleteMin
   ) where
 
-import Control.Lens.TH
+import Control.Lens.TH ( makeLenses )
+import Control.Lens.Each ( Each )
 import Data.Function ( on )
 import Data.Semigroup.Foldable ( Foldable1 )
 
@@ -28,6 +31,7 @@ import Data.Semigroup.Foldable ( Foldable1 )
 data Heap k v = Hp (KeyVal k v) [Heap k v]
   deriving (Show, Foldable, Functor, Traversable)
 deriving instance Foldable1 (Heap k)
+instance Each (Heap k v1) (Heap k v2) v1 v2
 
 findMin :: Heap k v -> KeyVal k v
 findMin (Hp kv _) = kv

@@ -1,28 +1,23 @@
-{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, TemplateHaskell #-}
+{-# LANGUAGE
+    FlexibleContexts
+  , ScopedTypeVariables
+  , TemplateHaskell #-}
 
 module Multitask
-  ( Timed(..)
-  , simulate
+  ( simulate
   ) where
 
 import Control.Lens
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Functor.Compose ( Compose(..) )
-import Data.List.NonEmpty ( NonEmpty(..) )
-import qualified Data.List.NonEmpty as Ne
 import Data.Foldable ( for_, traverse_ )
-import Data.Traversable ( for )
-import System.Random
 
+import Arrival
 import Heap
 import Job
 import Stream ( Stream )
 import qualified Stream
-
-data Timed a = Timed { _delay :: Time, _object :: a }
-  deriving (Show, Eq, Ord)
-makeLenses ''Timed
 
 newtype Future a = Future { _fromFuture :: a }
   deriving (Show, Eq, Ord)
@@ -125,7 +120,7 @@ timeUntilGrade (Future g) = do
   hq <- preuse (fg . val)
   let h = maybe (error "timeUntilGrade: no jobs in system") id hq
       tNow = totalAgeOf h
-      tFuture = totalAgeOf (h & mapped . grade .~ g)
+      tFuture = totalAgeOf (h & each . grade .~ g)
   return (tFuture - tNow)
 
 arrive :: IsJob job => Simulation job job
@@ -153,7 +148,7 @@ serveUntilGrade :: IsJob job => Future Grade -> Simulation job ()
 serveUntilGrade (Future g) = do
   tBefore <- totalAgeOf . Compose <$> preuse (fg . val)
   fg . key .= g
-  fg . val . traverse . grade .= g
+  fg . val . each . grade .= g
   tAfter <- totalAgeOf . Compose <$> preuse (fg . val)
   timeSinceEvent += tAfter - tBefore
 
