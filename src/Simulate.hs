@@ -118,7 +118,7 @@ sim = do
             Just hPost ->
               case jqPost of
                 Nothing -> do
-                  fg . key .= findMin hPost ^. val . to gradeFuture . fromFuture
+                  fg . key .= findMin hPost ^. val . grade
                   fg . val .= hPost
                   debug "multi fg, exits"
                 Just jPost -> do
@@ -189,7 +189,8 @@ serveUntilGrade (Future g) = do
   timeSinceEvent += tAfter - tBefore
 
 debug :: IsJob job => String -> Simulation job ()
-debug msg = return () -- tell =<< (:[]) . Left . (msg,) <$> use framesq
+debug msg = return ()
+-- tell =<< (:[]) . Left . (msg,) <$> use framesq
 
 frameOf :: IsJob job => job -> KeyVal Grade (Heap (Future Grade) job)
 frameOf j = Kv (gradeOf j) (singleton (Kv (gradeFuture j) j))

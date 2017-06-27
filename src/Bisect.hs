@@ -2,7 +2,8 @@
     DeriveFoldable
   , DeriveFunctor
   , DeriveTraversable
-  , RecordWildCards #-}
+  , RecordWildCards
+#-}
 
 module Bisect
   ( BisectConfig(..)
@@ -28,6 +29,7 @@ data BisectConfig a b = Bc{
 data BisectResult a = BrTooHigh | BrTooLow | BrJustRight a
   deriving (Show, Eq, Ord, Foldable, Functor, Traversable)
 
+-- Needs a monotonically increasing function!
 bisect ::
   (Fractional a, Num b, Ord a, Ord b) =>
   BisectConfig a b -> (a -> b) -> b -> BisectResult a

@@ -63,7 +63,7 @@ gradeAtTimeDefault (Kv gOrig jsOrig) t =
     -- We have no upper bound, so we shouldn't hit this case.
     BrTooHigh -> error "gradeAtTime: bisection failed. Maybe bad function?"
     -- If we pass a positive time, we shouldn't hit this case.
-    BrTooLow -> error "gradeAtTime: bisection failed. Maybe bad input?"
+    BrTooLow -> error ("gradeAtTime: bisection failed. Maybe bad input? " ++ show t)
     BrJustRight gTarget -> gTarget
   where
     totalAgeOrig = totalAgeOf jsOrig

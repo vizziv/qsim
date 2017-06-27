@@ -1,3 +1,0 @@
-module Event
-  --( TODO )
-  where
