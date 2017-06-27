@@ -5,7 +5,8 @@ module Arrival
   , Delayed(..)
   , delay
   , object
-  , arrivalStream
+  , poisson
+  , withLoad
   ) where
 
 import Control.Lens
@@ -20,33 +21,36 @@ data Delayed a = Delayed { _delay :: Time, _object :: a }
   deriving (Show, Eq, Ord)
 makeLenses ''Delayed
 
-data ArrivalConfig job = Ac{
-    load :: Double
-  , ageStartRange :: (Time, Time)
+data ArrivalConfig = Ac{
+    ageStartRange :: (Time, Time)
   , numTasksRange :: (Int, Int)
   , seed :: Int
   } deriving Show
 
-arrivalStream :: IsJob job => ArrivalConfig job -> Stream (Delayed job)
-arrivalStream Ac{..} = Stream.unfold (runState go) (mkStdGen seed, 0)
+poisson :: ArrivalConfig -> Stream (Delayed JobBase, Double)
+poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
   where
     numTasksMean = 1/2 * sumOf (both . to fromIntegral) numTasksRange
     ageStartMean = 1/2 * sumOf both ageStartRange
-    sizeMean@(Time s) = Time numTasksMean * ageStartMean
+    sizeMean@(Time s) = numTasksMean * ageStartMean
     expCdfInv cdf = Time $ (-s) * log (1 - cdf)
     go = do
-      (arr, keep) <- zoom _1 $ do
-        numTasks <- state $ randomR numTasksRange
-        ageStart <- state $ randomR ageStartRange
-        j <- state $ randomJob numTasks ageStart
-        t <- fmap expCdfInv . state $ randomR (0, 1)
-        keep <- fmap (< load) . state $ randomR (0, 1)
-        return (Delayed t j, keep)
-      case keep of
-        True -> do
-          t <- use _2
-          _2 .= 0
-          return [arr & delay +~ t]
-        False -> do
-          _2 += arr ^. delay
-          return []
+      numTasks <- state $ randomR numTasksRange
+      ageStart <- state $ randomR ageStartRange
+      jb <- state $ randomJb numTasks ageStart
+      t <- fmap expCdfInv . state $ randomR (0, 1)
+      keep <- state $ randomR (0, 1)
+      return [(Delayed t jb, keep)]
+
+withLoad ::
+  IsJob job =>
+  Stream (Delayed JobBase, Double) ->
+  Double ->
+  Stream (Delayed job)
+withLoad arrs load = Stream.unfold go (0, arrs)
+  where
+    go (t, Stream.Cons (arr, keep) arrs) =
+      if keep < load then
+        ([arr & delay +~ t & object %~ fromJb], (0, arrs))
+      else
+        ([], (t + arr ^. delay, arrs))

@@ -11,7 +11,7 @@ module Job
   , JobSerptParallel(..)
   , JobSerptFirst(..)
   , JobBase(..)
-  , randomJob
+  , randomJb
   , grade
   , totalAgeOf
   ) where
@@ -80,11 +80,11 @@ grade = lens gradeOf withGrade
 totalAgeOf :: (IsJob job, Foldable f, Functor f) => f job -> Time
 totalAgeOf = sum . fmap ageOf
 
-randomJob :: (IsJob job, RandomGen g) => Int -> Time -> g -> (job, g)
-randomJob numTasks ageStart gen =
+randomJb :: RandomGen g => Int -> Time -> g -> (JobBase, g)
+randomJb numTasks ageStart gen =
   flip runState gen $ do
     agesDone <- traverse genPareto (neReplicate numTasks ageStart)
-    return (fromJb Jb{..})
+    return Jb{..}
   where
     -- We rely on the fact that random for `Double` has a half-open range.
     genPareto age = paretoCdfInv age <$> state (randomR (0.0, 1.0))
