@@ -47,7 +47,7 @@ bisect Bc{..} f y
     searchDown x dx
       | x - dx < xMin = searchBetween xMin x
       | f (x - dx) < y = searchBetween (x - dx) x
-      | otherwise = searchUp (x - dx) (2 * dx)
+      | otherwise = searchDown (x - dx) (2 * dx)
     searchBetween xLow xHigh =
       case compareApprox dyEpsilon (f x) y of
         LT -> searchBetween x xHigh

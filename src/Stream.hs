@@ -11,6 +11,7 @@ module Stream
   , tail
   , unfold
   , take
+  , mapMaybe
   ) where
 
 import Prelude hiding ( head, tail, take )
@@ -28,3 +29,9 @@ unfold f sOld = foldr Cons (unfold f sNew) xs
 take :: Int -> Stream a -> [a]
 take 0 _ = []
 take n (Cons x xs) = x : take (n-1) xs
+
+mapMaybe :: (a -> Maybe b) -> Stream a -> Stream b
+mapMaybe f (Cons x xs) =
+  case f x of
+    Nothing -> mapMaybe f xs
+    Just y -> Cons y (mapMaybe f xs)

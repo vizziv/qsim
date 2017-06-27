@@ -189,7 +189,7 @@ serveUntilGrade (Future g) = do
   timeSinceEvent += tAfter - tBefore
 
 debug :: IsJob job => String -> Simulation job ()
-debug msg = tell =<< (:[]) . Left . (msg,) <$> use framesq
+debug msg = return () -- tell =<< (:[]) . Left . (msg,) <$> use framesq
 
 frameOf :: IsJob job => job -> KeyVal Grade (Heap (Future Grade) job)
 frameOf j = Kv (gradeOf j) (singleton (Kv (gradeFuture j) j))

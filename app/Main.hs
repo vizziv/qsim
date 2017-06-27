@@ -7,12 +7,13 @@ import Arrival
 import Job
 import Simulate
 import Stream ( Stream )
+import qualified Stream
 
 main :: IO ()
 main = putStrLn "Load me in ghci."
 
 ac :: ArrivalConfig
-ac = Ac{ ageStartRange = (1.0, 1.0), numTasksRange = (1, 1), seed = 9001 }
+ac = Ac{ ageStartRange = (1.0, 2.0), numTasksRange = (15, 15), seed = 9001 }
 
 jbs :: Stream (Delayed JobBase, Double)
 jbs = poisson ac
@@ -44,9 +45,11 @@ sizeJb =
 
 -- traverse_ (putStrLn . (++"\n") . show) . zip [0..] . Stream.take 100 $ simulate jsfs
 
-stats xs = foldl go (0, 0, 0) xs
+meanNumInSystem :: Int -> Stream (Either t (Delayed Event)) -> Double
+meanNumInSystem n xs = f/d
   where
-    go (f, d, n) (Right (Delayed t ev)) = (f + n*t, d + t, n + numOf ev)
-    go s _ = s
+    (Time f, Time d, _) =
+      foldl go (0, 0, 0) . Stream.take n . Stream.mapMaybe (preview _Right) $ xs
+    go (f, d, n) (Delayed t ev) = (f + n*t, d + t, n + numOf ev)
     numOf EvEnter = 1
     numOf EvExit = (-1)
