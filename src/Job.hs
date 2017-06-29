@@ -80,7 +80,7 @@ gradeAtTimeDefault (Kv gOrig jsOrig) t =
     xMax = positiveInfinity
     xGuess = xMin + 2*dxGuess
     dxGuess = 1.0
-    dyEpsilon = 1e-12
+    dyEpsilon = 1e-9
 
 grade :: IsJob job => Lens' job Grade
 grade = lens gradeOf withGrade

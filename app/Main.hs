@@ -11,15 +11,6 @@ import Simulate
 import Stream ( Stream )
 import qualified Stream
 
-{-
-  Bug! Currently hangs on following runs (first one is exactly at bad point):
-  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9003 0.8 11 11 1.0 3.0 94075
-  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9002 0.9 1 8 1.0 20.0 100000
-  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9001 0.9 1 3 1.0 100.0 10000
-  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9001 0.8 1 1 1.0 1000.0 20
-  Seems to be caused by large variability in starting age.
- -}
-
 main :: IO ()
 main = do
   [seed, _, numTasksLow, numTasksHigh, _, _, numEvents] <- map read <$> getArgs
@@ -122,4 +113,14 @@ sizeJb =
 
   This used to have a bug, but it works now.
   >>> last . Stream.take 6757 $ simulate jos
+ -}
+
+{-
+  Past bug: used to hang on following runs (first one is exactly at bad point):
+  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9003 0.8 11 11 1.0 3.0 94075
+  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9002 0.9 1 8 1.0 20.0 100000
+  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9001 0.9 1 3 1.0 100.0 10000
+  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9001 0.8 1 1 1.0 1000.0 20
+  Seems to be caused by large variability in starting age.
+  Solution: increase acceptable bisection error.
  -}
