@@ -37,6 +37,7 @@ class IsJob job where
   -- Create a job given number of tasks, starting age, and completion ages.
   -- Should use one of `jbPrepareFirst` or `jbPrepareParallel`.
   fromJb :: JobBase -> job
+  jbOf :: job -> JobBase
   -- Measures time relative to some arbitrary base point, not actual age.
   -- The base point can change with each transition.
   ageOf :: job -> Time
@@ -45,12 +46,19 @@ class IsJob job where
   -- Gives state of the job right before and right after its next transition.
   -- Should use one of `jbTransitionFirst` or `jbTransitionParallel`.
   nextTransition :: job -> (job, Maybe job)
+  -- Measures total amount of work left.
+  workOf :: job -> Time
+  workOf = workOfDefault
   ageAtGrade :: job -> Grade -> Time
   ageAtGrade = ageAtGradeDefault
   gradeAtTime ::
     (Foldable1 f, Functor f) =>
     KeyVal Grade (f job) -> Time -> Grade
   gradeAtTime = gradeAtTimeDefault
+
+-- This assumes that ageOf uses total family age.
+workOfDefault :: IsJob job => job -> Time
+workOfDefault = (-) <$> sum . agesDone . jbOf <*> ageOf
 
 ageAtGradeDefault :: IsJob job => job -> Grade -> Time
 ageAtGradeDefault j g = ageOf (j `withGrade` g) - ageOf j
@@ -120,6 +128,8 @@ instance IsJob JobOptimal where
     , jbJo = jbPrepareFirst jb
     }
 
+  jbOf = jbJo
+
   ageOf Jo{..} = ageFirst + (fromIntegral numRest * ageRest)
 
   gradeOf Jo{..} = Grade $ xRest/2 * repeated numRest magicInv (xFirst / xRest)
@@ -151,8 +161,10 @@ newtype JobSerptFirst = Jsf { joJsf :: JobOptimal }
 instance IsJob JobSerptFirst where
 
   fromJb = Jsf . fromJb
-
+  jbOf = jbOf . joJsf
   ageOf = ageOf . joJsf
+  workOf = workOf . joJsf
+  gradeAtTime = gradeAtTimeSerpt
 
   gradeOf (Jsf Jo{..}) = Grade $ xFirst + (fromIntegral numRest * xRest)
     where
@@ -169,8 +181,6 @@ instance IsJob JobSerptFirst where
     where
       (joPre, joqPost) = nextTransition joJsf
 
-  gradeAtTime = gradeAtTimeSerpt
-
 -- SERPT parallel: grade is expected size, tasks served in parallel.
 data JobSerptParallel = Jsp{
     ageAll :: Time
@@ -186,27 +196,23 @@ instance IsJob JobSerptParallel where
     , jbJsp = jbPrepareParallel jb
     }
 
+  jbOf = jbJsp
   ageOf Jsp{..} = fromIntegral numAll * ageAll
+  gradeOf j = Grade s where Time s = ageOf j
+  gradeAtTime = gradeAtTimeSerpt
 
-  gradeOf j = Grade s
-    where
-      Time s = ageOf j
-
-  withGrade j@Jsp{..} (Grade s) =
-    j{ ageAll = Time $ s / fromIntegral numAll }
+  withGrade j@Jsp{..} (Grade s) = j{ ageAll = Time $ s / fromIntegral numAll }
 
   nextTransition j@Jsp{..} = (jPre, jqPost)
     where
       jPre = j{ ageAll = Ne.head agesDone }
       jqPost = do
-        jbPost <- jbTransitionFirst jbJsp
+        jbPost <- jbTransitionParallel jbJsp
         return jPre{
             numAll = numAll - 1
           , jbJsp = jbPost
           }
       Jb{..} = jbJsp
-
-  gradeAtTime = gradeAtTimeSerpt
 
 -- For SERPT, grade is age, so we can compute gradeAtTime exactly.
 gradeAtTimeSerpt ::

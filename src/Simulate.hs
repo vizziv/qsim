@@ -1,5 +1,10 @@
 {-# LANGUAGE
-    FlexibleContexts
+    DeriveFoldable
+  , DeriveFunctor
+  , DeriveTraversable
+  , FlexibleContexts
+  , FlexibleInstances
+  , MultiParamTypeClasses
   , ScopedTypeVariables
   , TemplateHaskell
   , TupleSections
@@ -32,7 +37,8 @@ data Frames job = Frames{
     -- Foreground frame contains active jobs and has minimal current grade.
     _foreground :: KeyVal Grade (Heap (Future Grade) job)
   , _background :: Maybe (Heap Grade (Heap (Future Grade) job))
-  } deriving Show
+  } deriving (Show, Foldable, Functor, Traversable)
+instance Each (Frames job) (Frames job) job job
 makeLenses ''Frames
 
 data Env job = Env{
@@ -51,7 +57,11 @@ bgq = framesq . _Just . background
 data Action = AcArrival | AcTransition | AcMerge
   deriving (Show, Eq, Ord)
 
-data Event = EvEnter | EvExit
+data Event =
+    -- Work of entering job.
+    EvEnter Time
+    --- Number remaining, total work remaining.
+  | EvExit Int Time
   deriving (Show, Eq, Ord)
 
 simulate ::
@@ -98,7 +108,6 @@ sim = do
         Just (Kv g hPre) -> do
           let jqPost = findMin hPre ^. val . to transitioned
               hqPost = deleteMin hPre
-          when (null jqPost) depart
           case hqPost of
             Nothing ->
               case jqPost of
@@ -125,6 +134,7 @@ sim = do
                   fg .= frameOf jPost
                   bgq %= insert (Kv g hPost)
                   debug "multi fg, stays"
+          when (null jqPost) depart
     AcMerge -> do
       frameqBgMin <- preuse (bgq . _Just . to findMin)
       debug "AcMerge"
@@ -165,7 +175,7 @@ arrive = do
   serveUntilTime (tArr - tEv)
   arrivals %= view Stream.tail
   timeSinceEvent .= 0
-  tell [Right $ Delayed tArr EvEnter]
+  tell [Right . Delayed tArr . EvEnter . workOf $ j]
   return j
 
 depart :: IsJob job => Simulation job ()
@@ -173,7 +183,9 @@ depart = do
   t <- use timeSinceEvent
   arrivals . Stream.head . delay -= t
   timeSinceEvent .= 0
-  tell [Right $ Delayed t EvExit]
+  n <- get <&> lengthOf (framesq . _Just . each)
+  w <- get <&> sumOf (framesq . _Just . each . to workOf)
+  tell [Right . Delayed t $ EvExit n w]
 
 serveUntilTime :: IsJob job => Time -> Simulation job ()
 serveUntilTime t =

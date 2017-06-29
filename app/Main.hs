@@ -16,6 +16,7 @@ import qualified Stream
   ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9003 0.8 11 11 1.0 3.0 94075
   ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9002 0.9 1 8 1.0 20.0 100000
   ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9001 0.9 1 3 1.0 100.0 10000
+  ./.stack-work/install/x86_64-osx/lts-8.18/8.0.2/bin/qsim-exe 9001 0.8 1 1 1.0 1000.0 20
   Seems to be caused by large variability in starting age.
  -}
 
@@ -31,42 +32,75 @@ main = do
 
 run :: Int -> Double -> ArrivalConfig -> IO ()
 run numEvents load ac = do
-  let nJo = meanNumInSystem numEvents $ simulate jos
-      nJsf = meanNumInSystem numEvents $ simulate jsfs
-      nJsp = meanNumInSystem numEvents $ simulate jsps
+  let nJo = stats numEvents $ simulate jos
+      nJsf = stats numEvents $ simulate jsfs
+      nJsp = stats numEvents $ simulate jsps
   putStrLn "Optimal, SERPT Series, SERPT Parallel (mean number in system)"
-  traverse_ print [nJo, nJsf, nJsp]
+  putStrLn "Actually, reversed! (For finding the hanging bug.)"
+  traverse_ print [nJsp, nJsf, nJo]
   putStrLn "Optimal, SERPT Series, SERPT Parallel (normalized)"
   traverse_ (print . (/ nJo)) [nJo, nJsf, nJsp]
   where
+    (jos, jsfs, jsps) = streams ac load
+
+streams ::
+  ArrivalConfig ->
+  Double ->
+  ( Stream (Delayed JobOptimal)
+  , Stream (Delayed JobSerptFirst)
+  , Stream (Delayed JobSerptParallel)
+  )
+streams ac =
+  \load -> (jbs `withLoad` load, jbs `withLoad` load, jbs `withLoad` load)
+  where
     jbs = poisson ac
-    jos = jbs `withLoad` load :: Stream (Delayed JobOptimal)
-    jsfs = jbs `withLoad` load :: Stream (Delayed JobSerptFirst)
-    jsps = jbs `withLoad` load :: Stream (Delayed JobSerptParallel)
 
-ac :: ArrivalConfig
-ac = Ac{ ageStartRange = (1.0, 2.0), numTasksRange = (7, 7), seed = 9001 }
+statsWithErrs ::
+  Int ->
+  Stream (Either t (Delayed Event)) ->
+  -- Mean number in system, discrepancies for number and work in system.
+  (Double, [(Int, Time)])
+statsWithErrs numSamples xs = (f/d, errs)
+  where
+    (Time f, Time d, _, _, errs) =
+      foldl go (0, 0, 0, 0, []) .
+      Stream.take numSamples .
+      Stream.mapMaybe (preview _Right) $
+      xs
+    go (f, d, n, w, errs) (Delayed t ev) =
+      ( f + (fromIntegral n * t)
+      , d + t
+      , nNew
+      , wNew
+      , errsOf ev ++ errs
+      )
+      where
+        nNew = n + dnumOf ev
+        wNew = (if n > 0 then w - t else w) + dworkOf ev
+        dnumOf (EvEnter _) = 1
+        dnumOf (EvExit _ _) = (-1)
+        dworkOf (EvEnter w) = w
+        dworkOf (EvExit _ _) = 0
+        errsOf (EvEnter _) = []
+        errsOf (EvExit nEv wEv) = [(nNew - nEv, wNew - wEv)]
 
-jbs :: Stream (Delayed JobBase, Double)
-jbs = poisson ac
-
-jos :: Stream (Delayed JobOptimal)
-jos = jbs `withLoad` 0.8
-
-jsfs :: Stream (Delayed JobSerptFirst)
-jsfs = jbs `withLoad` 0.8
-
-jsps :: Stream (Delayed JobSerptParallel)
-jsps = jbs `withLoad` 0.8
-
-meanNumInSystem :: Int -> Stream (Either t (Delayed Event)) -> Double
-meanNumInSystem n xs = f/d
+-- Mean number in system.
+-- A bit faster than `fst . statsWithErrs`.
+stats :: Int -> Stream (Either t (Delayed Event)) -> Double
+stats numSamples xs = f/d
   where
     (Time f, Time d, _) =
-      foldl go (0, 0, 0) . Stream.take n . Stream.mapMaybe (preview _Right) $ xs
-    go (f, d, n) (Delayed t ev) = (f + n*t, d + t, n + numOf ev)
-    numOf EvEnter = 1
-    numOf EvExit = (-1)
+      foldl go (0, 0, 0) .
+      Stream.take numSamples .
+      Stream.mapMaybe (preview _Right) $
+      xs
+    go (f, d, n) (Delayed t ev) =
+      ( f + (fromIntegral n * t)
+      , d + t
+      , n + dnumOf ev
+      )
+    dnumOf (EvEnter _) = 1
+    dnumOf (EvExit _ _) = (-1)
 
 sizeJb :: JobBase -> Time
 sizeJb =

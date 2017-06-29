@@ -22,9 +22,9 @@ data Delayed a = Delayed { _delay :: Time, _object :: a }
 makeLenses ''Delayed
 
 data ArrivalConfig = Ac{
-    ageStartRange :: (Time, Time)
+    seed :: Int
   , numTasksRange :: (Int, Int)
-  , seed :: Int
+  , ageStartRange :: (Time, Time)
   } deriving Show
 
 poisson :: ArrivalConfig -> Stream (Delayed JobBase, Double)
