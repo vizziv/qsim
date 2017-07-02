@@ -22,10 +22,6 @@ import Control.Monad.State
 import Control.Monad.Writer
 import Data.Functor.Compose ( Compose(..) )
 import Data.Foldable ( for_, traverse_ )
-import Data.List.NonEmpty ( NonEmpty(..) )
-import Data.Semigroup ( Min(..) )
-import Data.Semigroup.Foldable ( foldMap1 )
-import Data.Semigroup.Traversable ( Traversable1 )
 
 import Arrival
 import Dmrl hiding ( gradeOf )
@@ -80,18 +76,25 @@ data Event =
 simulate ::
   IsJob job =>
   Stream (Delayed (Either JobDmrl job)) ->
-  Stream (Either (String, Maybe (Frames job)) (Delayed Event))
+  Stream
+  ( Either
+    (String, Maybe (Frames job), Maybe (Heap Grade JobDmrl))
+    (Delayed Event)
+  )
 simulate arrs =
   Stream.unfold (runState (execWriterT sim)) $
   Env 0 arrs Nothing Nothing Nothing
 
 type Simulation job =
-  WriterT [Either (String, Maybe (Frames job)) (Delayed Event)]
-  (State (Env job))
+  WriterT
+  [ Either
+    (String, Maybe (Frames job), Maybe (Heap Grade JobDmrl))
+    (Delayed Event)
+  ] (State (Env job))
 
 sim :: IsJob job => Simulation job ()
 sim = do
-  acq <- argqMin timeq (AcArrival :| [AcTransition JtMulti, AcSwap JtMulti])
+  acq <- argqMin timeq acsAll
   case acq of
     Nothing -> error "sim: no action, somehow...."
     Just ac -> act ac
@@ -175,6 +178,7 @@ act = \case
   AcTransition JtDmrl -> do
     debug "AcTransition JtDmrl"
     preuse (jdsq . _Just . valMin . sizeActual) >>= traverse_ serveUntilTime
+    jdsq %= (>>= deleteMin)
     depart JtDmrl
   AcSwap JtMulti -> do
     debug "AcSwap JtMulti"
@@ -222,7 +226,7 @@ depart jt = do
 
 setJtqActive :: IsJob job => Simulation job ()
 setJtqActive = do
-  jtq <- argqMin (preuse . gradeJt) (JtMulti :| [JtDmrl])
+  jtq <- argqMin (preuse . gradeJt) [JtMulti, JtDmrl]
   jtqActive .= jtq
   where
     gradeJt JtMulti = fg . key
@@ -269,8 +273,7 @@ timeUntilGrade (Future g) = do
   return (tFuture - tNow)
 
 debug :: IsJob job => String -> Simulation job ()
-debug msg = return ()
--- tell =<< (:[]) . Left . (msg,) <$> use framesq
+debug msg = tell =<< (:[]) . Left <$> ((msg,,) <$> use framesq <*> use jdsq)
 
 frameOf :: IsJob job => job -> KeyVal Grade (Heap (Future Grade) job)
 frameOf j = Kv (gradeOf j) (singleton (kvf gradeFuture j))
@@ -289,3 +292,7 @@ argqMin f xs =
   where
     kv x = fmap (Kv ?? x) <$> f x
     minimumq = minimumOf traverse
+
+acsAll :: [Action]
+acsAll =
+  AcArrival : [ac jt | ac <- [AcTransition, AcSwap], jt <- [JtMulti, JtDmrl]]

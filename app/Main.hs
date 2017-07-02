@@ -49,8 +49,7 @@ run numEvents loads ac = do
       nJsf = stats numEvents $ simulate jsfs
       nJsp = stats numEvents $ simulate jsps
   putStrLn "Optimal, SERPT Series, SERPT Parallel (mean number in system)"
-  putStrLn "Actually, reversed! (For finding the hanging bug.)"
-  traverse_ print [nJsp, nJsf, nJo]
+  traverse_ print [nJo, nJsf, nJsp]
   putStrLn "Optimal, SERPT Series, SERPT Parallel (normalized)"
   traverse_ (print . (/ nJo)) [nJo, nJsf, nJsp]
   where
