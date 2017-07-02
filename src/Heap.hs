@@ -19,10 +19,11 @@ module Heap
   , insert
   , merge
   , deleteMin
+  , kvify
   ) where
 
-import Control.Lens.TH ( makeLenses )
-import Control.Lens.Each ( Each )
+import Control.Lens
+import Control.Lens
 import Data.Function ( on )
 import Data.Semigroup.Foldable ( Foldable1 )
 
@@ -68,3 +69,6 @@ instance Eq k => Eq (KeyVal k v) where
 
 instance Ord k => Ord (KeyVal k v) where
   compare = compare `on` _key
+
+kvify :: Applicative f => (a -> f b) -> a -> f (KeyVal b a)
+kvify f x = (Kv ?? x) <$> f x

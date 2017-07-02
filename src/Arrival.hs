@@ -11,8 +11,10 @@ module Arrival
 
 import Control.Lens
 import Control.Monad.State
+import Data.Monoid ( (<>) )
 import System.Random
 
+import Dmrl ( JobDmrl(..) )
 import Job
 import Stream ( Stream )
 import qualified Stream
@@ -25,32 +27,47 @@ data ArrivalConfig = Ac{
     seed :: Int
   , numTasksRange :: (Int, Int)
   , ageStartRange :: (Time, Time)
+  , sizeDmrlRange :: (Time, Time)
   } deriving Show
 
-poisson :: ArrivalConfig -> Stream (Delayed JobBase, Double)
+poisson :: ArrivalConfig -> Stream (Delayed (Either JobDmrl JobBase), Double)
 poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
   where
     numTasksMean = 1/2 * sumOf (both . to fromIntegral) numTasksRange
     ageStartMean = 1/2 * sumOf both ageStartRange
-    sizeMean@(Time s) = numTasksMean * ageStartMean
-    expCdfInv cdf = Time $ (-s) * log (1 - cdf)
+    Time s = numTasksMean * ageStartMean
+    Time sDmrl = 1/2 * sumOf both sizeDmrlRange
+    expCdfInv cdf = Time $ - addRates s sDmrl * log (1 - cdf)
+    decideDmrl = fmap (< sDmrl) . state $ randomR (0, s + sDmrl)
+    addRates x y = 1/(1/x + 1/y)
     go = do
-      numTasks <- state $ randomR numTasksRange
-      ageStart <- state $ randomR ageStartRange
-      jb <- state $ randomJb numTasks ageStart
       t <- fmap expCdfInv . state $ randomR (0, 1)
+      isDmrl <- decideDmrl
       keep <- state $ randomR (0, 1)
-      return [(Delayed t jb, keep)]
+      j <- case isDmrl of
+        False -> do
+          numTasks <- state $ randomR numTasksRange
+          ageStart <- state $ randomR ageStartRange
+          fmap Right . state $ randomJb numTasks ageStart
+        True ->
+          fmap (Left . uncurry Jd sizeDmrlRange) . state $
+          randomR sizeDmrlRange
+      return [(Delayed t j, keep)]
 
 withLoad ::
   IsJob job =>
-  Stream (Delayed JobBase, Double) ->
-  Double ->
-  Stream (Delayed job)
-withLoad arrs load = Stream.unfold go (0, arrs)
+  Stream (Delayed (Either JobDmrl JobBase), Double) ->
+  (Double, Double) ->
+  Stream (Delayed (Either JobDmrl job))
+withLoad arrs (load, loadDmrl) = Stream.unfold go (0, arrs)
   where
     go (t, Stream.Cons (arr, keep) arrs) =
-      if keep < load then
-        ([arr & delay +~ t & object %~ fromJb], (0, arrs))
+      if keep < relevantLoad then
+        ([arr & delay +~ t & object . _Right %~ fromJb], (0, arrs))
       else
         ([], (t + arr ^. delay, arrs))
+      where
+        relevantLoad =
+          case arr ^. object of
+            Left _ -> loadDmrl
+            Right _ -> load
