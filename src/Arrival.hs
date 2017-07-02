@@ -6,7 +6,7 @@ module Arrival
   , delay
   , object
   , poisson
-  , withLoad
+  , withLoads
   ) where
 
 import Control.Lens
@@ -33,33 +33,33 @@ data ArrivalConfig = Ac{
 poisson :: ArrivalConfig -> Stream (Delayed (Either JobDmrl JobBase), Double)
 poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
   where
+    rand r = state $ randomR r
     numTasksMean = 1/2 * sumOf (both . to fromIntegral) numTasksRange
     ageStartMean = 1/2 * sumOf both ageStartRange
     Time s = numTasksMean * ageStartMean
     Time sDmrl = 1/2 * sumOf both sizeDmrlRange
-    expCdfInv cdf = Time $ - addRates s sDmrl * log (1 - cdf)
-    decideDmrl = fmap (< sDmrl) . state $ randomR (0, s + sDmrl)
-    addRates x y = 1/(1/x + 1/y)
+    arrivalRate = 1/s + 1/sDmrl
+    expCdfInv cdf = Time $ - log (1 - cdf) / arrivalRate
+    decideDmrl = (< 1/sDmrl) <$> rand (0, arrivalRate)
     go = do
-      t <- fmap expCdfInv . state $ randomR (0, 1)
+      t <- expCdfInv <$> rand (0, 1)
       isDmrl <- decideDmrl
-      keep <- state $ randomR (0, 1)
+      keep <- rand (0, 1)
       j <- case isDmrl of
         False -> do
-          numTasks <- state $ randomR numTasksRange
-          ageStart <- state $ randomR ageStartRange
+          numTasks <- rand numTasksRange
+          ageStart <- rand ageStartRange
           fmap Right . state $ randomJb numTasks ageStart
         True ->
-          fmap (Left . uncurry Jd sizeDmrlRange) . state $
-          randomR sizeDmrlRange
+          Left . uncurry Jd sizeDmrlRange <$> rand sizeDmrlRange
       return [(Delayed t j, keep)]
 
-withLoad ::
+withLoads ::
   IsJob job =>
   Stream (Delayed (Either JobDmrl JobBase), Double) ->
   (Double, Double) ->
   Stream (Delayed (Either JobDmrl job))
-withLoad arrs (load, loadDmrl) = Stream.unfold go (0, arrs)
+withLoads arrs (load, loadDmrl) = Stream.unfold go (0, arrs)
   where
     go (t, Stream.Cons (arr, keep) arrs) =
       if keep < relevantLoad then

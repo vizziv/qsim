@@ -63,8 +63,11 @@ streams ::
   , Stream (Delayed (Either JobDmrl JobSerptFirst))
   , Stream (Delayed (Either JobDmrl JobSerptParallel))
   )
-streams ac =
-  \loads -> (jbs `withLoad` loads, jbs `withLoad` loads, jbs `withLoad` loads)
+streams ac = \loads ->
+  ( jbs `withLoads` loads
+  , jbs `withLoads` loads
+  , jbs `withLoads` loads
+  )
   where
     jbs = poisson ac
 
@@ -124,17 +127,17 @@ sizeJb =
 {-
   Check that load is really 0.5:
 
-  >>> Stream.take 50000 jsfs &
-  >>> (/) <$>
-  >>> sumOf (each . object . to (sizeJb . jbJo . joJsf)) <*>
-  >>> sumOf (each . delay)
+  > Stream.take 50000 jsfs &
+  > (/) <$>
+  > sumOf (each . object . to (sizeJb . jbJo . joJsf)) <*>
+  > sumOf (each . delay)
   Time 0.5004608201008964
 
   For debugging.
-  >>> traverse_ (putStrLn . (++"\n") . show) . zip [0..] . Stream.take 100 $ simulate jsfs
+  > traverse_ (putStrLn . (++"\n") . show) . zip [0..] . Stream.take 100 $ simulate jsfs
 
   This used to have a bug, but it works now.
-  >>> last . Stream.take 6757 $ simulate jos
+  > last . Stream.take 6757 $ simulate jos
  -}
 
 {-

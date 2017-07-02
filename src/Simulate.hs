@@ -232,11 +232,10 @@ serveUntilTime :: IsJob job => Time -> Simulation job ()
 serveUntilTime t = do
   jtq <- use jtqActive
   case jtq of
-    Nothing -> error "serveUntilTime: no jobs"
     Just JtMulti ->
       (preuse fg >>=) . traverse_ $ \frame ->
         serveUntilGrade (Future $ gradeAtTime frame t)
-    Just JtDmrl -> do
+    _ -> do
       timeSinceEvent += t
       jdsq . _Just . kvMin %= kvAgeBy t
   where
