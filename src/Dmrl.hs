@@ -5,6 +5,8 @@ module Dmrl
   , sizeMin
   , sizeMax
   , sizeActual
+  , ageBy
+  , gradeOf
   ) where
 
 import Control.Lens

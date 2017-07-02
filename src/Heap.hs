@@ -12,17 +12,19 @@
 module Heap
   ( Heap
   , KeyVal(..)
-  , key
-  , val
   , findMin
   , singleton
   , insert
   , merge
   , deleteMin
-  , kvify
+  , kvf
+  , key
+  , val
+  , kvMin
+  , keyMin
+  , valMin
   ) where
 
-import Control.Lens
 import Control.Lens
 import Data.Function ( on )
 import Data.Semigroup.Foldable ( Foldable1 )
@@ -41,8 +43,11 @@ singleton :: KeyVal k v -> Heap k v
 singleton kv = Hp kv []
 
 insert :: Ord k => KeyVal k v -> Maybe (Heap k v) -> Maybe (Heap k v)
-insert kv Nothing = Just $ singleton kv
-insert kv (Just h) = Just $ merge (singleton kv) h
+insert kv = Just . insert1 kv
+
+insert1 :: Ord k => KeyVal k v -> Maybe (Heap k v) -> Heap k v
+insert1 kv Nothing = singleton kv
+insert1 kv (Just h) = merge (singleton kv) h
 
 merge :: Ord k => Heap k v -> Heap k v -> Heap k v
 merge h1@(Hp kv1 hs1) h2@(Hp kv2 hs2)
@@ -70,5 +75,22 @@ instance Eq k => Eq (KeyVal k v) where
 instance Ord k => Ord (KeyVal k v) where
   compare = compare `on` _key
 
-kvify :: Applicative f => (a -> f b) -> a -> f (KeyVal b a)
-kvify f x = (Kv ?? x) <$> f x
+kvf :: (a -> b) -> a -> KeyVal b a
+kvf f x = Kv (f x) x
+
+-- `kvMin` and `keyMin` are not proper traversals if you increase the key.
+
+kvMin :: Ord k => Lens' (Heap k v) (KeyVal k v)
+kvMin f h@(Hp kvOld hs) = repair <$> f kvOld
+  where
+    repair kvNew =
+      if kvNew <= kvOld then
+        Hp kvNew hs
+      else
+        insert1 kvNew (deleteMin h)
+
+keyMin :: Ord k => Lens' (Heap k v) k
+keyMin = kvMin . key
+
+valMin :: Ord k => Lens' (Heap k v) v
+valMin = kvMin . val
