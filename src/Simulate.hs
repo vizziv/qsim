@@ -91,8 +91,7 @@ type Simulation job =
 
 sim :: IsJob job => Simulation job ()
 sim = do
-  acq <- alaf Compose argMin timeq $
-         AcArrival :| [AcTransition JtMulti, AcSwap JtMulti]
+  acq <- argqMin timeq (AcArrival :| [AcTransition JtMulti, AcSwap JtMulti])
   case acq of
     Nothing -> error "sim: no action, somehow...."
     Just ac -> act ac
@@ -223,7 +222,7 @@ depart jt = do
 
 setJtqActive :: IsJob job => Simulation job ()
 setJtqActive = do
-  jtq <- alaf Compose argMin (preuse . gradeJt) (JtMulti :| [JtDmrl])
+  jtq <- argqMin (preuse . gradeJt) (JtMulti :| [JtDmrl])
   jtqActive .= jtq
   where
     gradeJt JtMulti = fg . key
@@ -283,7 +282,11 @@ gradeFuture = Future . gradeOf . fst . nextTransition
 transitioned :: IsJob job => job -> Maybe job
 transitioned = snd . nextTransition
 
-argMin :: (Traversable1 f, Applicative m, Ord b) => (a -> m b) -> f a -> m a
-argMin f xs = view val . ala Min foldMap1 <$> traverse kvf xs
+argqMin ::
+  (Traversable t, Applicative f, Ord b) =>
+  (a -> f (Maybe b)) -> t a -> f (Maybe a)
+argqMin f xs =
+  fmap (view val) . minimumq . Compose <$> traverse kv xs
   where
-    kvf x = (Kv ?? x) <$> f x
+    kv x = fmap (Kv ?? x) <$> f x
+    minimumq = minimumOf traverse

@@ -5,6 +5,7 @@ import Data.Monoid ( (<>) )
 import Data.Foldable ( traverse_ )
 import System.Environment
 
+import Dmrl ( JobDmrl )
 import Arrival
 import Job
 import Simulate
@@ -13,16 +14,37 @@ import qualified Stream
 
 main :: IO ()
 main = do
-  [seed, _, numTasksLow, numTasksHigh, _, _, numEvents] <- map read <$> getArgs
-  [_, load, _, _, ageStartLow, ageStartHigh, _] <- map read <$> getArgs
-  run numEvents load Ac{
+  [   seed
+    , _
+    , numTasksLow
+    , numTasksHigh
+    , _
+    , _
+    , _
+    , _
+    , _
+    , numEvents
+    ] <- map read <$> getArgs
+  [   _
+    , load
+    , _
+    , _
+    , ageStartLow
+    , ageStartHigh
+    , loadDmrl
+    , sizeDmrlLow
+    , sizeDmrlHigh
+    , _
+    ] <- map read <$> getArgs
+  run numEvents (load, loadDmrl) Ac{
       seed = seed
     , numTasksRange = (numTasksLow, numTasksHigh)
     , ageStartRange = (Time ageStartLow, Time ageStartHigh)
+    , sizeDmrlRange = (Time sizeDmrlLow, Time sizeDmrlHigh)
     }
 
-run :: Int -> Double -> ArrivalConfig -> IO ()
-run numEvents load ac = do
+run :: Int -> (Double, Double) -> ArrivalConfig -> IO ()
+run numEvents loads ac = do
   let nJo = stats numEvents $ simulate jos
       nJsf = stats numEvents $ simulate jsfs
       nJsp = stats numEvents $ simulate jsps
@@ -32,17 +54,17 @@ run numEvents load ac = do
   putStrLn "Optimal, SERPT Series, SERPT Parallel (normalized)"
   traverse_ (print . (/ nJo)) [nJo, nJsf, nJsp]
   where
-    (jos, jsfs, jsps) = streams ac load
+    (jos, jsfs, jsps) = streams ac loads
 
 streams ::
   ArrivalConfig ->
-  Double ->
-  ( Stream (Delayed JobOptimal)
-  , Stream (Delayed JobSerptFirst)
-  , Stream (Delayed JobSerptParallel)
+  (Double, Double) ->
+  ( Stream (Delayed (Either JobDmrl JobOptimal))
+  , Stream (Delayed (Either JobDmrl JobSerptFirst))
+  , Stream (Delayed (Either JobDmrl JobSerptParallel))
   )
 streams ac =
-  \load -> (jbs `withLoad` load, jbs `withLoad` load, jbs `withLoad` load)
+  \loads -> (jbs `withLoad` loads, jbs `withLoad` loads, jbs `withLoad` loads)
   where
     jbs = poisson ac
 
@@ -68,12 +90,12 @@ statsWithErrs numSamples xs = (f/d, errs)
       where
         nNew = n + dnumOf ev
         wNew = (if n > 0 then w - t else w) + dworkOf ev
-        dnumOf (EvEnter _) = 1
-        dnumOf (EvExit _ _) = (-1)
-        dworkOf (EvEnter w) = w
-        dworkOf (EvExit _ _) = 0
-        errsOf (EvEnter _) = []
-        errsOf (EvExit nEv wEv) = [(nNew - nEv, wNew - wEv)]
+        dnumOf (EvEnter _ _) = 1
+        dnumOf (EvExit _ _ _) = (-1)
+        dworkOf (EvEnter _ w) = w
+        dworkOf (EvExit _ _ _) = 0
+        errsOf (EvEnter _ _) = []
+        errsOf (EvExit _ nEv wEv) = [(nNew - nEv, wNew - wEv)]
 
 -- Mean number in system.
 -- A bit faster than `fst . statsWithErrs`.
@@ -90,8 +112,8 @@ stats numSamples xs = f/d
       , d + t
       , n + dnumOf ev
       )
-    dnumOf (EvEnter _) = 1
-    dnumOf (EvExit _ _) = (-1)
+    dnumOf (EvEnter _ _) = 1
+    dnumOf (EvExit _ _ _) = (-1)
 
 sizeJb :: JobBase -> Time
 sizeJb =
