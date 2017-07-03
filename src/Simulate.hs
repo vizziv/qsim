@@ -14,6 +14,7 @@
 
 module Simulate
   ( Event(..)
+  , JobType(..)
   , simulate
   ) where
 
@@ -223,6 +224,7 @@ depart jt = do
   n <- get <&> lengthOf (framesq . _Just . each)
   w <- get <&> sumOf (framesq . _Just . each . to workOf)
   tell [Right . Delayed t $ EvExit jt n w]
+  setJtqActive
 
 setJtqActive :: IsJob job => Simulation job ()
 setJtqActive = do

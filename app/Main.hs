@@ -45,15 +45,16 @@ main = do
 
 run :: Int -> (Double, Double) -> ArrivalConfig -> IO ()
 run numEvents loads ac = do
-  let nJo = stats numEvents $ simulate jos
-      nJsf = stats numEvents $ simulate jsfs
-      nJsp = stats numEvents $ simulate jsps
+  let statsJo = stats numEvents $ simulate jos
+      statsJsf = stats numEvents $ simulate jsfs
+      statsJsp = stats numEvents $ simulate jsps
   putStrLn "Optimal, SERPT Series, SERPT Parallel (mean number in system)"
-  traverse_ print [nJo, nJsf, nJsp]
+  traverse_ print [statsJo, statsJsf, statsJsp]
   putStrLn "Optimal, SERPT Series, SERPT Parallel (normalized)"
-  traverse_ (print . (/ nJo)) [nJo, nJsf, nJsp]
+  traverse_ (print . (zipDivBy statsJo)) [statsJo, statsJsf, statsJsp]
   where
     (jos, jsfs, jsps) = streams ac loads
+    zipDivBy (a1, a2, a3) (b1, b2, b3) = (b1/a1, b2/a2, b3/a3)
 
 streams ::
   ArrivalConfig ->
@@ -101,21 +102,25 @@ statsWithErrs numSamples xs = (f/d, errs)
 
 -- Mean number in system.
 -- A bit faster than `fst . statsWithErrs`.
-stats :: Int -> Stream (Either t (Delayed Event)) -> Double
-stats numSamples xs = f/d
+stats :: Int -> Stream (Either t (Delayed Event)) -> (Double, Double, Double)
+stats numSamples xs = fs & each %~ fromTime . (/d)
   where
-    (Time f, Time d, _) =
-      foldl go (0, 0, 0) .
+    (fs, d, _) =
+      foldl go ((0, 0, 0), 0, (0, 0, 0)) .
       Stream.take numSamples .
       Stream.mapMaybe (preview _Right) $
       xs
-    go (f, d, n) (Delayed t ev) =
-      ( f + (fromIntegral n * t)
+    go (fs, d, ns) (Delayed t ev) =
+      ( fs `zipPlus` (ns & each %~ (*t) . fromIntegral)
       , d + t
-      , n + dnumOf ev
+      , ns `zipPlus` dnumsOf ev :: (Int, Int, Int)
       )
-    dnumOf (EvEnter _ _) = 1
-    dnumOf (EvExit _ _ _) = (-1)
+    dnumsOf (EvEnter jt _) = jtVec jt
+    dnumsOf (EvExit jt _ _) = jtVec jt & each %~ negate
+    zipPlus (a1, a2, a3) (b1, b2, b3) = (a1+b1, a2+b2, a3+b3)
+    jtVec JtMulti = (1, 1, 0)
+    jtVec JtDmrl = (1, 0, 1)
+    fromTime (Time t) = t
 
 sizeJb :: JobBase -> Time
 sizeJb =
