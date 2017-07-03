@@ -2,35 +2,39 @@
 
 module Dmrl
   ( JobDmrl(..)
-  , sizeMin
-  , sizeMax
+  , sizeExpected
   , sizeActual
   , ageBy
   , gradeOf
+  , randomJd
+  , expCdfInv
   ) where
 
 import Control.Lens
+import Control.Monad.State
 import Data.Monoid ( (<>) )
+import System.Random
 
 import Job ( Grade(..), Time(..) )
 
+-- Exponentially distributed.
+
 data JobDmrl = Jd{
-    _sizeMin :: Time
-  , _sizeMax :: Time
+    _sizeExpected :: Time
   , _sizeActual :: Time
   } deriving Show
 makeLenses ''JobDmrl
 
 ageBy :: JobDmrl -> Time -> JobDmrl
-ageBy jd t =
-  jd
-  & sizeMin %~ subtractNonnegative t
-  & sizeMax -~ t
-  & sizeActual -~ t
-  where
-    subtractNonnegative x y = max 0 (y - x)
+ageBy jd t = jd & sizeActual -~ t
 
 gradeOf :: JobDmrl -> Grade
-gradeOf jd = Grade g
+gradeOf jd = Grade s
   where
-    Time g = sumOf (sizeMin <> sizeMax) jd / 2
+    Time s = jd ^. sizeExpected
+
+expCdfInv :: Time -> Double -> Time
+expCdfInv (Time s) cdf = Time $ -s * log (1 - cdf)
+
+randomJd :: (RandomGen g, MonadState g m) => Time -> m JobDmrl
+randomJd s = Jd s . expCdfInv s <$> state (randomR (0.0, 1.0))

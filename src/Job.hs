@@ -17,7 +17,7 @@ module Job
   ) where
 
 import Control.Lens ( Lens', lens )
-import Control.Monad.State ( runState, state )
+import Control.Monad.State
 import Data.Foldable ( foldl' )
 import Data.List.NonEmpty ( NonEmpty(..) )
 import qualified Data.List.NonEmpty as Ne
@@ -88,11 +88,10 @@ grade = lens gradeOf withGrade
 totalAgeOf :: (IsJob job, Foldable f, Functor f) => f job -> Time
 totalAgeOf = sum . fmap ageOf
 
-randomJb :: RandomGen g => Int -> Time -> g -> (JobBase, g)
-randomJb numTasks ageStart gen =
-  flip runState gen $ do
-    agesDone <- traverse genPareto (neReplicate numTasks ageStart)
-    return Jb{..}
+randomJb :: (RandomGen g, MonadState g m) => Int -> Time -> m JobBase
+randomJb numTasks ageStart = do
+  agesDone <- traverse genPareto (neReplicate numTasks ageStart)
+  return Jb{..}
   where
     -- We rely on the fact that random for `Double` has a half-open range.
     genPareto age = paretoCdfInv age <$> state (randomR (0.0, 1.0))

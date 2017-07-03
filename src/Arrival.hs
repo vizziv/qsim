@@ -14,7 +14,7 @@ import Control.Monad.State
 import Data.Monoid ( (<>) )
 import System.Random
 
-import Dmrl ( JobDmrl(..) )
+import Dmrl
 import Job
 import Stream ( Stream )
 import qualified Stream
@@ -39,19 +39,19 @@ poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
     Time s = numTasksMean * ageStartMean
     Time sDmrl = 1/2 * sumOf both sizeDmrlRange
     arrivalRate = 1/s + 1/sDmrl
-    expCdfInv cdf = Time $ - log (1 - cdf) / arrivalRate
     decideDmrl = (< 1/sDmrl) <$> rand (0, arrivalRate)
     go = do
-      t <- expCdfInv <$> rand (0, 1)
+      t <- expCdfInv (Time $ 1 / arrivalRate) <$> rand (0, 1)
       isDmrl <- decideDmrl
       keep <- rand (0, 1)
       j <- case isDmrl of
         False -> do
           numTasks <- rand numTasksRange
           ageStart <- rand ageStartRange
-          fmap Right . state $ randomJb numTasks ageStart
-        True ->
-          Left . uncurry Jd sizeDmrlRange <$> rand sizeDmrlRange
+          Right <$> randomJb numTasks ageStart
+        True -> do
+          sizeDmrl <- rand sizeDmrlRange
+          Left <$> randomJd sizeDmrl
       return [(Delayed t j, keep)]
 
 withLoads ::
