@@ -14,8 +14,7 @@ import qualified Stream
 
 main :: IO ()
 main = do
-  [   seed
-    , _
+  [   _
     , numTasksLow
     , numTasksHigh
     , _
@@ -24,9 +23,9 @@ main = do
     , _
     , _
     , numEvents
+    , seed
     ] <- map read <$> getArgs
-  [   _
-    , load
+  [   load
     , _
     , _
     , ageStartLow
@@ -34,6 +33,7 @@ main = do
     , loadDmrl
     , sizeDmrlLow
     , sizeDmrlHigh
+    , _
     , _
     ] <- map read <$> getArgs
   run numEvents (load, loadDmrl) Ac{
