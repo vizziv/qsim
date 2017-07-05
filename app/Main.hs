@@ -4,8 +4,9 @@ module Main where
 
 import Control.Lens hiding ( argument )
 import Data.Monoid ( (<>) )
-import Data.Foldable ( traverse_ )
+import Data.Foldable ( for_ )
 import Options.Applicative
+import System.IO
 
 import Dmrl ( JobDmrl )
 import Arrival
@@ -18,7 +19,13 @@ import qualified Stream
 main :: IO ()
 main = do
   opts <- execParser (info parserAc mempty)
-  traverse_ run . expandAc $ opts
+  let configs = expandAc opts
+      n = length configs
+  for_ (zip [0..] configs) $ \(i, config) -> do
+    hPutStrLn stderr $ "Progress: " ++ show i ++ " / " ++ show n
+    run config
+  hPutStrLn stderr $ "Progress: " ++ show n ++ " / " ++ show n
+  hPutStrLn stderr $ "Done!"
   where
     expandAc =
       expand & mapped . mapped . _2 %~ \(seed, num, size, factor) ->
