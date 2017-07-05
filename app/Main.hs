@@ -20,7 +20,9 @@ main = do
   opts <- execParser (info parserAc mempty)
   traverse_ run . expandAc $ opts
   where
-    expandAc = expand & mapped . mapped . _2 %~ uncurry4 Ac
+    expandAc =
+      expand & mapped . mapped . _2 %~ \(seed, num, size, factor) ->
+        Ac seed num size (fromIntegral num * size * factor)
 
 parserAc =
   (,,)
@@ -29,7 +31,7 @@ parserAc =
         <$> option auto (short 's')
         <*> argument auto (metavar "MULTI-NUM-TASKS")
         <*> (map Time <$> argument auto (metavar "MULTI-TASK-SIZE"))
-        <*> (map Time <$> argument auto (metavar "DMRL-JOB-SIZE"))
+        <*> (map Time <$> argument auto (metavar "DMRL-SIZE-FACTOR"))
       )
   <*> ( (,)
         <$> argument auto (metavar "LOAD")
@@ -40,7 +42,7 @@ run :: (Int, ArrivalConfig, (Double, Double)) -> IO ()
 run (numEvents, ac, (load, fracDmrl)) =
   print (numEvents, loads, ac, statsJo, statsJsf, statsJsp)
   where
-    loads = (load, load * fracDmrl)
+    loads = (load * (1 - fracDmrl), load * fracDmrl)
     (jos, jsfs, jsps) = streams ac loads
     statsJo = stats numEvents $ simulate jos
     statsJsf = stats numEvents $ simulate jsfs
