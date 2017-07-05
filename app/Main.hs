@@ -1,59 +1,50 @@
+{-# LANGUAGE DefaultSignatures, FlexibleInstances, TypeFamilies #-}
+
 module Main where
 
-import Control.Lens
+import Control.Lens hiding ( argument )
 import Data.Monoid ( (<>) )
 import Data.Foldable ( traverse_ )
-import System.Environment
+import Options.Applicative
 
 import Dmrl ( JobDmrl )
 import Arrival
-import Job
+import Job hiding ( ageStart )
+import qualified Job ( ageStart )
 import Simulate
 import Stream ( Stream )
 import qualified Stream
 
 main :: IO ()
 main = do
-  [   _
-    , numTasksLow
-    , numTasksHigh
-    , _
-    , _
-    , _
-    , _
-    , _
-    , numEvents
-    , seed
-    ] <- map read <$> getArgs
-  [   load
-    , _
-    , _
-    , ageStartLow
-    , ageStartHigh
-    , loadDmrl
-    , sizeDmrlLow
-    , sizeDmrlHigh
-    , _
-    , _
-    ] <- map read <$> getArgs
-  run numEvents (load, loadDmrl) Ac{
-      seed = seed
-    , numTasksRange = (numTasksLow, numTasksHigh)
-    , ageStartRange = (Time ageStartLow, Time ageStartHigh)
-    , sizeDmrlRange = (Time sizeDmrlLow, Time sizeDmrlHigh)
-    }
-
-run :: Int -> (Double, Double) -> ArrivalConfig -> IO ()
-run numEvents loads ac = do
-  let statsJo = stats numEvents $ simulate jos
-      statsJsf = stats numEvents $ simulate jsfs
-      statsJsp = stats numEvents $ simulate jsps
-  putStrLn "Optimal, SERPT Series, SERPT Parallel (mean number in system)"
-  traverse_ print [statsJo, statsJsf, statsJsp]
-  putStrLn "Optimal, SERPT Series, SERPT Parallel (normalized)"
-  traverse_ (print . (zipDivBy statsJo)) [statsJo, statsJsf, statsJsp]
+  opts <- execParser (info parserAc mempty)
+  traverse_ run . expandAc $ opts
   where
+    expandAc = expand & mapped . mapped . _2 %~ uncurry4 Ac
+
+parserAc =
+  (,,)
+  <$> ((:[]) <$> option auto (short 'n'))
+  <*> ( (,,,)
+        <$> option auto (short 's')
+        <*> argument auto (metavar "MULTI-NUM-TASKS")
+        <*> (map Time <$> argument auto (metavar "MULTI-TASK-SIZE"))
+        <*> (map Time <$> argument auto (metavar "DMRL-JOB-SIZE"))
+      )
+  <*> ( (,)
+        <$> argument auto (metavar "LOAD")
+        <*> argument auto (metavar "DMRL-FRACTION")
+      )
+
+run :: (Int, ArrivalConfig, (Double, Double)) -> IO ()
+run (numEvents, ac, (load, fracDmrl)) =
+  print (numEvents, loads, ac, statsJo, statsJsf, statsJsp)
+  where
+    loads = (load, load * fracDmrl)
     (jos, jsfs, jsps) = streams ac loads
+    statsJo = stats numEvents $ simulate jos
+    statsJsf = stats numEvents $ simulate jsfs
+    statsJsp = stats numEvents $ simulate jsps
     zipDivBy (a1, a2, a3) (b1, b2, b3) = (b1/a1, b2/a2, b3/a3)
 
 streams ::
@@ -126,7 +117,7 @@ sizeJb :: JobBase -> Time
 sizeJb =
   sumOf $
   to agesDone . each <>
-  to ((*) <$> negate . fromIntegral . length . agesDone <*> ageStart)
+  to ((*) <$> negate . fromIntegral . length . agesDone <*> Job.ageStart)
 
 {-
   Check that load is really 0.5:
@@ -153,3 +144,50 @@ sizeJb =
   Seems to be caused by large variability in starting age.
   Solution: increase acceptable bisection error.
  -}
+
+uncurry4 :: (a -> b -> c -> d -> e) -> (a, b, c, d) -> e
+uncurry4 f (a, b, c, d) = f a b c d
+
+class Product t where
+  type ProductForm t
+  type ProductForm t = [t]
+  expand :: ProductForm t -> [t]
+  default expand :: ProductForm t ~ [t] => ProductForm t -> [t]
+  expand = id
+
+instance Product Int
+instance Product Double
+instance Product Time
+
+instance (Product a, Product b) => Product (a, b) where
+  type ProductForm (a, b) =
+    ( ProductForm a
+    , ProductForm b)
+  expand (as, bs) =
+    [ (a, b)
+    | a <- expand as, b <- expand bs
+    ]
+
+instance (Product a, Product b, Product c) => Product (a, b, c) where
+  type ProductForm (a, b, c) =
+    ( ProductForm a
+    , ProductForm b
+    , ProductForm c
+    )
+  expand (as, bs, cs) =
+    [ (a, b, c)
+    | a <- expand as, b <- expand bs, c <- expand cs
+    ]
+
+instance (Product a, Product b, Product c, Product d) =>
+  Product (a, b, c, d) where
+  type ProductForm (a, b, c, d) =
+    ( ProductForm a
+    , ProductForm b
+    , ProductForm c
+    , ProductForm d
+    )
+  expand (as, bs, cs, ds) =
+    [ (a, b, c, d)
+    | a <- expand as, b <- expand bs, c <- expand cs, d <- expand ds
+    ]

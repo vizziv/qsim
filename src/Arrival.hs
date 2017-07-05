@@ -25,32 +25,27 @@ makeLenses ''Delayed
 
 data ArrivalConfig = Ac{
     seed :: Int
-  , numTasksRange :: (Int, Int)
-  , ageStartRange :: (Time, Time)
-  , sizeDmrlRange :: (Time, Time)
+  , numTasks :: Int
+  , ageStart :: Time
+  , sizeDmrl :: Time
   } deriving Show
 
 poisson :: ArrivalConfig -> Stream (Delayed (Either JobDmrl JobBase), Double)
 poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
   where
     rand r = state $ randomR r
-    numTasksMean = 1/2 * sumOf (both . to fromIntegral) numTasksRange
-    ageStartMean = 1/2 * sumOf both ageStartRange
-    Time s = numTasksMean * ageStartMean
-    Time sDmrl = 1/2 * sumOf both sizeDmrlRange
+    Time s = fromIntegral numTasks * ageStart
+    Time sDmrl = sizeDmrl
     arrivalRate = 1/s + 1/sDmrl
     decideDmrl = (< 1/sDmrl) <$> rand (0, arrivalRate)
     go = do
       t <- expCdfInv (Time $ 1 / arrivalRate) <$> rand (0, 1)
-      isDmrl <- decideDmrl
       keep <- rand (0, 1)
+      isDmrl <- decideDmrl
       j <- case isDmrl of
-        False -> do
-          numTasks <- rand numTasksRange
-          ageStart <- rand ageStartRange
+        False ->
           Right <$> randomJb numTasks ageStart
-        True -> do
-          sizeDmrl <- rand sizeDmrlRange
+        True ->
           Left <$> randomJd sizeDmrl
       return [(Delayed t j, keep)]
 
