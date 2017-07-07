@@ -3,6 +3,10 @@
 module Arrival
   ( ArrivalConfig(..)
   , Delayed(..)
+  , seed
+  , numTasks
+  , ageStart
+  , sizeDmrl
   , delay
   , object
   , poisson
@@ -15,27 +19,28 @@ import Data.Monoid ( (<>) )
 import System.Random
 
 import Dmrl
-import Job
+import Job hiding ( ageStart )
 import Stream ( Stream )
 import qualified Stream
 
 data Delayed a = Delayed { _delay :: Time, _object :: a }
-  deriving (Show, Eq, Ord)
+  deriving (Read, Show, Eq, Ord)
 makeLenses ''Delayed
 
 data ArrivalConfig = Ac{
-    seed :: Int
-  , numTasks :: Int
-  , ageStart :: Time
-  , sizeDmrl :: Time
-  } deriving Show
+    _seed :: Int
+  , _numTasks :: Int
+  , _ageStart :: Time
+  , _sizeDmrl :: Time
+  } deriving (Read, Show, Eq, Ord)
+makeLenses ''ArrivalConfig
 
 poisson :: ArrivalConfig -> Stream (Delayed (Either JobDmrl JobBase), Double)
-poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
+poisson Ac{..} = Stream.unfold (runState go) (mkStdGen _seed)
   where
     rand r = state $ randomR r
-    Time s = fromIntegral numTasks * ageStart
-    Time sDmrl = sizeDmrl
+    Time s = fromIntegral _numTasks * _ageStart
+    Time sDmrl = _sizeDmrl
     arrivalRate = 1/s + 1/sDmrl
     decideDmrl = (< 1/sDmrl) <$> rand (0, arrivalRate)
     go = do
@@ -44,9 +49,9 @@ poisson Ac{..} = Stream.unfold (runState go) (mkStdGen seed)
       isDmrl <- decideDmrl
       j <- case isDmrl of
         False ->
-          Right <$> randomJb numTasks ageStart
+          Right <$> randomJb _numTasks _ageStart
         True ->
-          Left <$> randomJd sizeDmrl
+          Left <$> randomJd _sizeDmrl
       return [(Delayed t j, keep)]
 
 withLoads ::

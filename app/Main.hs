@@ -1,10 +1,17 @@
-{-# LANGUAGE DefaultSignatures, FlexibleInstances, TypeFamilies #-}
+{-# LANGUAGE
+    DefaultSignatures
+  , FlexibleInstances
+  , RankNTypes
+  , TypeFamilies
+#-}
 
 module Main where
 
 import Control.Lens hiding ( argument )
-import Data.Monoid ( (<>) )
+import Data.List ( groupBy, sortBy )
+import Data.Monoid ( (<>), Product(..) )
 import Data.Foldable ( for_ )
+import Data.Function ( on )
 import Options.Applicative
 import System.IO
 
@@ -47,7 +54,7 @@ parserAc =
 
 run :: (Int, ArrivalConfig, (Double, Double)) -> IO ()
 run (numEvents, ac, (load, fracDmrl)) =
-  print (numEvents, loads, ac, statsJo, statsJsf, statsJsp)
+  print ((numEvents, loads, ac), (statsJo, statsJsf, statsJsp))
   where
     loads = (load * (1 - fracDmrl), load * fracDmrl)
     (jos, jsfs, jsps) = streams ac loads
@@ -128,6 +135,58 @@ sizeJb =
   to agesDone . each <>
   to ((*) <$> negate . fromIntegral . length . agesDone <*> Job.ageStart)
 
+-- Taking statistics on runs.
+
+type Params = (Int, (Double, Double), ArrivalConfig)
+
+type Data =
+  ( (Double, Double, Double)
+  , (Double, Double, Double)
+  , (Double, Double, Double)
+  )
+
+analyze :: IO ()
+analyze = do
+  runs <- map read . lines <$> readFile "out.txt" :: IO [(Params, Data)]
+  let clumps = clumpOn (view params) runs & each . _2 . each %~ view _2
+      errsOf ::
+        Getter Data Double ->
+        [(Params, (Double, Double, Double))]
+      errsOf f = clumps & each . _2 %~ confidenceOf (each . f)
+  print $ last (errsOf (_1 . _1))
+  print $ last (errsOf (_2 . _1))
+  print $ last (errsOf (to ratios))
+  where
+    params = _1 . to ((_3 . seed) .~ 0)
+    ratios d = d ^. _2 . _1 / d ^. _1 . _1
+
+meanOf :: Fractional a => Fold s a -> s -> a
+meanOf f xs = sumOf f xs / fromIntegral (lengthOf f xs)
+
+stddevOf :: Floating a => Fold s a -> s -> a
+stddevOf f xs =
+  sqrt ( sumOf (f . to (subtract m) . to (^2)) xs /
+         fromIntegral (lengthOf f xs - 1)
+       )
+  where
+    m = meanOf f xs
+
+confidenceOf :: Floating a => Fold s a -> s -> (a, a, a)
+confidenceOf f xs = (m - 2*err, m, m + 2*err)
+  where
+    m = meanOf f xs
+    err = stddevOf f xs / sqrt (fromIntegral (lengthOf f xs))
+
+clumpOn :: Ord b => (a -> b) -> [a] -> [(b, [a])]
+clumpOn f = map (\xs -> (f (head xs), xs)) . clumpBy (compare `on` f)
+
+clumpBy :: (a -> a -> Ordering) -> [a] -> [[a]]
+clumpBy cmp = groupBy eq . sortBy cmp
+  where
+    eq x y
+      | cmp x y == EQ = True
+      | otherwise = False
+
 {-
   Check that load is really 0.5:
 
@@ -157,44 +216,44 @@ sizeJb =
 uncurry4 :: (a -> b -> c -> d -> e) -> (a, b, c, d) -> e
 uncurry4 f (a, b, c, d) = f a b c d
 
-class Product t where
-  type ProductForm t
-  type ProductForm t = [t]
-  expand :: ProductForm t -> [t]
-  default expand :: ProductForm t ~ [t] => ProductForm t -> [t]
+class Expand t where
+  type Compact t
+  type Compact t = [t]
+  expand :: Compact t -> [t]
+  default expand :: Compact t ~ [t] => Compact t -> [t]
   expand = id
 
-instance Product Int
-instance Product Double
-instance Product Time
+instance Expand Int
+instance Expand Double
+instance Expand Time
 
-instance (Product a, Product b) => Product (a, b) where
-  type ProductForm (a, b) =
-    ( ProductForm a
-    , ProductForm b)
+instance (Expand a, Expand b) => Expand (a, b) where
+  type Compact (a, b) =
+    ( Compact a
+    , Compact b)
   expand (as, bs) =
     [ (a, b)
     | a <- expand as, b <- expand bs
     ]
 
-instance (Product a, Product b, Product c) => Product (a, b, c) where
-  type ProductForm (a, b, c) =
-    ( ProductForm a
-    , ProductForm b
-    , ProductForm c
+instance (Expand a, Expand b, Expand c) => Expand (a, b, c) where
+  type Compact (a, b, c) =
+    ( Compact a
+    , Compact b
+    , Compact c
     )
   expand (as, bs, cs) =
     [ (a, b, c)
     | a <- expand as, b <- expand bs, c <- expand cs
     ]
 
-instance (Product a, Product b, Product c, Product d) =>
-  Product (a, b, c, d) where
-  type ProductForm (a, b, c, d) =
-    ( ProductForm a
-    , ProductForm b
-    , ProductForm c
-    , ProductForm d
+instance (Expand a, Expand b, Expand c, Expand d) =>
+  Expand (a, b, c, d) where
+  type Compact (a, b, c, d) =
+    ( Compact a
+    , Compact b
+    , Compact c
+    , Compact d
     )
   expand (as, bs, cs, ds) =
     [ (a, b, c, d)

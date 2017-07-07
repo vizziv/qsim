@@ -22,7 +22,7 @@ import Job ( Grade(..), Time(..) )
 data JobDmrl = Jd{
     _sizeExpected :: Time
   , _sizeActual :: Time
-  } deriving Show
+  } deriving (Read, Show)
 makeLenses ''JobDmrl
 
 ageBy :: JobDmrl -> Time -> JobDmrl

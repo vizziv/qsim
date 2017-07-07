@@ -28,10 +28,10 @@ import Bisect
 import Heap ( KeyVal(..) )
 
 newtype Time = Time Double
-  deriving (Show, Eq, Ord, Num, Fractional, Real, Random)
+  deriving (Read, Show, Eq, Ord, Num, Fractional, Real, Random)
 
 newtype Grade = Grade Double
-  deriving (Show, Eq, Ord, Num, Fractional, Real)
+  deriving (Read, Show, Eq, Ord, Num, Fractional, Real)
 
 class IsJob job where
   -- Create a job given number of tasks, starting age, and completion ages.
@@ -104,7 +104,7 @@ randomJb numTasks ageStart = do
 data JobBase = Jb{
     ageStart :: Time
   , agesDone :: NonEmpty Time
-  } deriving Show
+  } deriving (Read, Show)
 
 -- Optimal policy: grade is fair reward, tasks served one at a time.
 data JobOptimal = Jo{
@@ -116,7 +116,7 @@ data JobOptimal = Jo{
     -- Must be `length (agesDone jbJo) - 1`.
   , numRest :: Int
   , jbJo :: JobBase
-  } deriving Show
+  } deriving (Read, Show)
 
 instance IsJob JobOptimal where
 
@@ -155,7 +155,7 @@ instance IsJob JobOptimal where
 
 -- SERPT first: grade is expected size, tasks served one by one.
 newtype JobSerptFirst = Jsf { joJsf :: JobOptimal }
-  deriving Show
+  deriving (Read, Show)
 
 instance IsJob JobSerptFirst where
 
@@ -185,7 +185,7 @@ data JobSerptParallel = Jsp{
     ageAll :: Time
   , numAll :: Int
   , jbJsp :: JobBase
-  } deriving Show
+  } deriving (Read, Show)
 
 instance IsJob JobSerptParallel where
 

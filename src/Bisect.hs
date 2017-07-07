@@ -24,10 +24,10 @@ data BisectConfig a b = Bc{
   , xGuess :: a
   , dxGuess :: a
   , dyEpsilon :: b
-  } deriving Show
+  } deriving (Read, Show)
 
 data BisectResult a = BrTooHigh | BrTooLow | BrJustRight a
-  deriving (Show, Eq, Ord, Foldable, Functor, Traversable)
+  deriving (Read, Show, Eq, Ord, Foldable, Functor, Traversable)
 
 -- Needs a monotonically increasing function!
 bisect ::
