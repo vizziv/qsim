@@ -8,9 +8,10 @@
 module Main where
 
 import Control.Lens hiding ( argument )
+import Control.Monad ( when )
 import Data.List ( groupBy, sortBy )
 import Data.Monoid ( (<>), Product(..) )
-import Data.Foldable ( for_ )
+import Data.Foldable ( traverse_, for_ )
 import Data.Function ( on )
 import Options.Applicative
 import System.IO
@@ -25,32 +26,36 @@ import qualified Stream
 
 main :: IO ()
 main = do
-  opts <- execParser (info parserAc mempty)
-  let configs = expandAc opts
-      n = length configs
-  for_ (zip [0..] configs) $ \(i, config) -> do
-    hPutStrLn stderr $ "Progress: " ++ show i ++ " / " ++ show n
-    run config
-  hPutStrLn stderr $ "Progress: " ++ show n ++ " / " ++ show n
-  hPutStrLn stderr $ "Done!"
+  opts <- execParser (info parser mempty)
+  case opts of
+    Left compactConfigs -> do
+      let configs = expandAc compactConfigs
+          n = length configs
+      for_ (zip [0..] configs) $ \(i, config) -> do
+        hPutStrLn stderr $ "Progress: " ++ show i ++ " / " ++ show n
+        run config
+      hPutStrLn stderr $ "Progress: " ++ show n ++ " / " ++ show n
+      hPutStrLn stderr $ "Done!"
+    Right filename -> analyze (const True) filename
   where
     expandAc =
       expand & mapped . mapped . _2 %~ \(seed, num, size, factor) ->
         Ac seed num size (fromIntegral num * size * factor)
-
-parserAc =
-  (,,)
-  <$> ((:[]) <$> option auto (short 'n'))
-  <*> ( (,,,)
-        <$> option auto (short 's')
-        <*> argument auto (metavar "MULTI-NUM-TASKS")
-        <*> (map Time <$> argument auto (metavar "MULTI-TASK-SIZE"))
-        <*> (map Time <$> argument auto (metavar "DMRL-SIZE-FACTOR"))
-      )
-  <*> ( (,)
-        <$> argument auto (metavar "LOAD")
-        <*> argument auto (metavar "DMRL-FRACTION")
-      )
+    parser =
+      Left <$>
+      ( (,,)
+        <$> ((:[]) <$> option auto (short 'n'))
+        <*> ( (,,,)
+              <$> option auto (short 's')
+              <*> argument auto (metavar "MULTI-NUM-TASKS")
+              <*> (map Time <$> argument auto (metavar "MULTI-TASK-SIZE"))
+              <*> (map Time <$> argument auto (metavar "DMRL-SIZE-FACTOR"))
+            )
+        <*> ( (,)
+              <$> argument auto (metavar "LOAD")
+              <*> argument auto (metavar "DMRL-FRACTION")
+            )
+      ) <|> Right <$> strOption (short 'a' <> metavar "FILENAME")
 
 run :: (Int, ArrivalConfig, (Double, Double)) -> IO ()
 run (numEvents, ac, (load, fracDmrl)) =
@@ -145,20 +150,38 @@ type Data =
   , (Double, Double, Double)
   )
 
-analyze :: IO ()
-analyze = do
-  runs <- map read . lines <$> readFile "out.txt" :: IO [(Params, Data)]
+type Stats =
+  ( Params
+  , (Double, Double, Double)
+  , (Double, Double, Double)
+  , (Double, Double, Double)
+  , (Double, Double, Double)
+  , (Double, Double, Double)
+  )
+
+analyze :: (Stats -> Bool) -> String -> IO ()
+analyze p filename = do
+  runs <- map read . lines <$> readFile filename :: IO [(Params, Data)]
   let clumps = clumpOn (view params) runs & each . _2 . each %~ view _2
       errsOf ::
         Getter Data Double ->
-        [(Params, (Double, Double, Double))]
-      errsOf f = clumps & each . _2 %~ confidenceOf (each . f)
-  print $ last (errsOf (_1 . _1))
-  print $ last (errsOf (_2 . _1))
-  print $ last (errsOf (to ratios))
+        (Params, [Data]) ->
+        (Double, Double, Double)
+      errsOf f = confidenceOf (_2 . each . f)
+  for_ clumps $ \clump -> do
+    let stats =
+          ( clump ^. _1
+          , errsOf (raw _1) clump
+          , errsOf (raw _2) clump
+          , errsOf (raw _3) clump
+          , errsOf (ratio _1 _2) clump
+          , errsOf (ratio _1 _3) clump
+          )
+    when (p stats) (print stats)
   where
     params = _1 . to ((_3 . seed) .~ 0)
-    ratios d = d ^. _2 . _1 / d ^. _1 . _1
+    raw f = f . _1
+    ratio f g = to (\d -> d ^. g . _1 / d ^. f . _1)
 
 meanOf :: Fractional a => Fold s a -> s -> a
 meanOf f xs = sumOf f xs / fromIntegral (lengthOf f xs)
