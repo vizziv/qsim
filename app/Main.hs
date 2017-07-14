@@ -163,11 +163,6 @@ analyze :: (Stats -> Bool) -> String -> IO ()
 analyze p filename = do
   runs <- map read . lines <$> readFile filename :: IO [(Params, Data)]
   let clumps = clumpOn (view params) runs & each . _2 . each %~ view _2
-      errsOf ::
-        Getter Data Double ->
-        (Params, [Data]) ->
-        (Double, Double, Double)
-      errsOf f = confidenceOf (_2 . each . f)
   for_ clumps $ \clump -> do
     let stats =
           ( clump ^. _1
@@ -182,6 +177,11 @@ analyze p filename = do
     params = _1 . to ((_3 . seed) .~ 0)
     raw f = f . _1
     ratio f g = to (\d -> d ^. g . _1 / d ^. f . _1)
+    errsOf ::
+      Getter Data Double ->
+      (Params, [Data]) ->
+      (Double, Double, Double)
+    errsOf f = confidenceOf (_2 . each . f)
 
 meanOf :: Fractional a => Fold s a -> s -> a
 meanOf f xs = sumOf f xs / fromIntegral (lengthOf f xs)
